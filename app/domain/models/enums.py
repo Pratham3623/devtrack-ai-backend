@@ -65,3 +65,21 @@ class ProjectTemplateType(str, Enum):
     BUG_TRACKING = "BUG_TRACKING"
     ROADMAP = "ROADMAP"
     CUSTOM = "CUSTOM"
+
+
+class IssueStatus(str, Enum):
+    BACKLOG = "BACKLOG"
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    IN_REVIEW = "IN_REVIEW"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
+class IssuePriority(str, Enum):
+    NO_PRIORITY = "NO_PRIORITY"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+

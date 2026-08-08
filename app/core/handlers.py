@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -43,10 +44,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                 "status": 422,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "trace_id": trace_id,
-                "details": exc.errors(),
+                "details": jsonable_encoder(exc.errors()),
             }
         },
     )
+
 
 
 async def db_exception_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:

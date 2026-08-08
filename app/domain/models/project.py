@@ -37,6 +37,10 @@ class Project(BaseModel):
     members: Mapped[List["ProjectMember"]] = relationship(
         "ProjectMember", back_populates="project", cascade="all, delete-orphan"
     )
+    issues: Mapped[List["Issue"]] = relationship(
+        "Issue", back_populates="project", cascade="all, delete-orphan"
+    )
+
 
 
 class ProjectMember(BaseModel):

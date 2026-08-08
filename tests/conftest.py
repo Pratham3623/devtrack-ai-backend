@@ -12,11 +12,13 @@ from app.db.base import Base
 # Register all models with Base.metadata
 from app.domain.models.audit_log import AuditLog  # noqa: F401
 from app.domain.models.invitation import Invitation  # noqa: F401
+from app.domain.models.issue import Issue  # noqa: F401
 from app.domain.models.organization import Organization, OrgMember  # noqa: F401
 from app.domain.models.project import Project, ProjectMember  # noqa: F401
 from app.domain.models.refresh_token import RefreshToken  # noqa: F401
 from app.domain.models.team import Team, TeamMember  # noqa: F401
 from app.domain.models.user import User  # noqa: F401
+
 from app.main import app
 
 # Test In-Memory SQLite Engine
