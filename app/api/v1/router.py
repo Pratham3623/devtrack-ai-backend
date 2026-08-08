@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, health, organizations
+from app.api.v1.endpoints import auth, health, organizations, projects
 
 api_router = APIRouter()
 
@@ -7,3 +7,9 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["Health & System Operations"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication & Security"])
 api_router.include_router(organizations.router, prefix="/organizations", tags=["Organization Governance"])
+
+# Projects: templates at /projects, org-scoped project routes at /organizations
+api_router.include_router(projects.templates_router, prefix="/projects", tags=["Project Management Engine"])
+api_router.include_router(projects.org_router, prefix="/organizations", tags=["Project Management Engine"])
+
+

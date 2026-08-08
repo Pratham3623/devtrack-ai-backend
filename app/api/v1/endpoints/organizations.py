@@ -17,8 +17,12 @@ from app.domain.schemas.organization import (
     OrganizationUpdateRequest,
     OrgMemberResponse,
     OrgMemberRoleUpdateRequest,
+    RejectInvitationRequest,
     TeamCreateRequest,
+    TeamMemberResponse,
+    TeamMemberRoleUpdateRequest,
     TeamResponse,
+    TeamUpdateRequest,
     TransferOwnershipRequest,
 )
 from app.services.org_service import OrgService
@@ -87,6 +91,21 @@ async def update_organization(
     return OrganizationResponse.model_validate(org)
 
 
+@router.delete(
+    "/{org_id}",
+    response_model=OrganizationResponse,
+    summary="Delete/Archive Organization",
+)
+async def delete_organization(
+    org_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> OrganizationResponse:
+    service = OrgService(db)
+    org = await service.delete_organization(org_id, current_user)
+    return OrganizationResponse.model_validate(org)
+
+
 @router.post(
     "/{org_id}/invitations",
     response_model=Dict[str, Any],
@@ -104,8 +123,23 @@ async def invite_member(
     return {
         "message": f"Invitation sent to '{dto.email}'.",
         "invitation_id": str(invitation.id),
-        "raw_token": raw_token,  # Provided for local dev testing
+        "raw_token": raw_token,
     }
+
+
+@router.get(
+    "/{org_id}/invitations",
+    response_model=List[InvitationResponse],
+    summary="List Organization Invitations",
+)
+async def list_invitations(
+    org_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[InvitationResponse]:
+    service = OrgService(db)
+    invitations = await service.list_invitations(org_id, current_user)
+    return [InvitationResponse.model_validate(i) for i in invitations]
 
 
 @router.post(
@@ -121,6 +155,37 @@ async def accept_invitation(
     service = OrgService(db)
     member = await service.accept_invitation(current_user, dto.token)
     return OrgMemberResponse.model_validate(member)
+
+
+@router.post(
+    "/invitations/reject",
+    response_model=InvitationResponse,
+    summary="Reject Organization Invitation",
+)
+async def reject_invitation(
+    dto: RejectInvitationRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> InvitationResponse:
+    service = OrgService(db)
+    invitation = await service.reject_invitation(current_user, dto.token)
+    return InvitationResponse.model_validate(invitation)
+
+
+@router.delete(
+    "/{org_id}/invitations/{invitation_id}",
+    response_model=InvitationResponse,
+    summary="Cancel Organization Invitation",
+)
+async def cancel_invitation(
+    org_id: uuid.UUID,
+    invitation_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> InvitationResponse:
+    service = OrgService(db)
+    invitation = await service.cancel_invitation(org_id, invitation_id, current_user)
+    return InvitationResponse.model_validate(invitation)
 
 
 @router.get(
@@ -219,6 +284,55 @@ async def list_teams(
     return [TeamResponse.model_validate(t) for t in teams]
 
 
+@router.get(
+    "/{org_id}/teams/{team_id}",
+    response_model=TeamResponse,
+    summary="Get Team Details",
+)
+async def get_team(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> TeamResponse:
+    service = OrgService(db)
+    team = await service.get_team(org_id, team_id, current_user)
+    return TeamResponse.model_validate(team)
+
+
+@router.patch(
+    "/{org_id}/teams/{team_id}",
+    response_model=TeamResponse,
+    summary="Update Team",
+)
+async def update_team(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    dto: TeamUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> TeamResponse:
+    service = OrgService(db)
+    team = await service.update_team(org_id, team_id, current_user, dto)
+    return TeamResponse.model_validate(team)
+
+
+@router.delete(
+    "/{org_id}/teams/{team_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete Team",
+)
+async def delete_team(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, str]:
+    service = OrgService(db)
+    await service.delete_team(org_id, team_id, current_user)
+    return {"message": "Team deleted successfully."}
+
+
 @router.post(
     "/{org_id}/teams/{team_id}/members",
     status_code=status.HTTP_201_CREATED,
@@ -234,6 +348,57 @@ async def add_team_member(
     service = OrgService(db)
     await service.add_team_member(team_id, current_user, dto)
     return {"message": "Team member added successfully."}
+
+
+@router.get(
+    "/{org_id}/teams/{team_id}/members",
+    response_model=List[TeamMemberResponse],
+    summary="List Team Members",
+)
+async def list_team_members(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[TeamMemberResponse]:
+    service = OrgService(db)
+    members = await service.list_team_members(org_id, team_id, current_user)
+    return [TeamMemberResponse.model_validate(m) for m in members]
+
+
+@router.patch(
+    "/{org_id}/teams/{team_id}/members/{user_id}",
+    response_model=TeamMemberResponse,
+    summary="Update Team Member Role",
+)
+async def update_team_member_role(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    user_id: uuid.UUID,
+    dto: TeamMemberRoleUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> TeamMemberResponse:
+    service = OrgService(db)
+    member = await service.update_team_member_role(org_id, team_id, user_id, current_user, dto.role)
+    return TeamMemberResponse.model_validate(member)
+
+
+@router.delete(
+    "/{org_id}/teams/{team_id}/members/{user_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Remove Team Member",
+)
+async def remove_team_member(
+    org_id: uuid.UUID,
+    team_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, str]:
+    service = OrgService(db)
+    await service.remove_team_member(org_id, team_id, user_id, current_user)
+    return {"message": "Team member removed successfully."}
 
 
 @router.get(

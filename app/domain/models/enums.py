@@ -17,6 +17,9 @@ class OAuthProvider(str, Enum):
 class OrgRole(str, Enum):
     OWNER = "OWNER"
     ADMIN = "ADMIN"
+    PROJECT_MANAGER = "PROJECT_MANAGER"
+    DEVELOPER = "DEVELOPER"
+    VIEWER = "VIEWER"
     MEMBER = "MEMBER"
     GUEST = "GUEST"
 
@@ -29,6 +32,7 @@ class TeamRole(str, Enum):
 class InvitationStatus(str, Enum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
     REVOKED = "REVOKED"
 
@@ -43,3 +47,21 @@ class AuditAction(str, Enum):
     OWNERSHIP_TRANSFERRED = "OWNERSHIP_TRANSFERRED"
     TEAM_CREATED = "TEAM_CREATED"
     TEAM_MEMBER_ADDED = "TEAM_MEMBER_ADDED"
+    PROJECT_CREATED = "PROJECT_CREATED"
+    PROJECT_UPDATED = "PROJECT_UPDATED"
+    PROJECT_ARCHIVED = "PROJECT_ARCHIVED"
+
+
+class ProjectRole(str, Enum):
+    LEAD = "LEAD"
+    MAINTAINER = "MAINTAINER"
+    CONTRIBUTOR = "CONTRIBUTOR"
+    VIEWER = "VIEWER"
+
+
+class ProjectTemplateType(str, Enum):
+    KANBAN = "KANBAN"
+    SCRUM = "SCRUM"
+    BUG_TRACKING = "BUG_TRACKING"
+    ROADMAP = "ROADMAP"
+    CUSTOM = "CUSTOM"

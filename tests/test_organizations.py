@@ -218,3 +218,204 @@ async def test_audit_log_recording(async_client: AsyncClient):
     logs = logs_resp.json()
     assert len(logs) >= 1
     assert logs[0]["action"] == "ORG_CREATED"
+
+
+# ==========================================
+# PHASE 4 NEW EXPANDED TESTS
+# ==========================================
+
+@pytest.mark.asyncio
+async def test_organization_soft_delete_and_archive(async_client: AsyncClient):
+    owner_token, _ = await get_authenticated_user_tokens(async_client, "softdel_owner@devtrack.ai", "SoftDel Owner")
+
+    org_resp = await async_client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Archive Org"},
+    )
+    org_id = org_resp.json()["id"]
+
+    # Delete / Archive Org
+    del_resp = await async_client.delete(
+        f"/api/v1/organizations/{org_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert del_resp.status_code == 200
+    assert del_resp.json()["is_archived"] is True
+    assert del_resp.json()["archived_at"] is not None
+
+    # Fetch archived org fails with 404
+    get_resp = await async_client.get(
+        f"/api/v1/organizations/{org_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_team_full_crud_lifecycle_and_members(async_client: AsyncClient):
+    owner_token, owner_user = await get_authenticated_user_tokens(async_client, "team_crud_owner@devtrack.ai", "Team CRUD Owner")
+
+    org_resp = await async_client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Team Lifecycle Org"},
+    )
+    org_id = org_resp.json()["id"]
+
+    # 1. Create Team
+    team_resp = await async_client.post(
+        f"/api/v1/organizations/{org_id}/teams",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Frontend Guild", "description": "UI/UX Engineers"},
+    )
+    assert team_resp.status_code == 201
+    team_id = team_resp.json()["id"]
+
+    # 2. Get Team Details
+    get_team_resp = await async_client.get(
+        f"/api/v1/organizations/{org_id}/teams/{team_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert get_team_resp.status_code == 200
+    assert get_team_resp.json()["name"] == "Frontend Guild"
+
+    # 3. Update Team
+    patch_resp = await async_client.patch(
+        f"/api/v1/organizations/{org_id}/teams/{team_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "UI/UX Guild", "description": "Updated Description"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["name"] == "UI/UX Guild"
+
+    # 4. Add Member and List Team Members
+    await async_client.post(
+        f"/api/v1/organizations/{org_id}/teams/{team_id}/members",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"user_id": owner_user["id"], "role": "LEAD"},
+    )
+    members_resp = await async_client.get(
+        f"/api/v1/organizations/{org_id}/teams/{team_id}/members",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert members_resp.status_code == 200
+    assert len(members_resp.json()) == 1
+    assert members_resp.json()[0]["role"] == "LEAD"
+
+    # 5. Delete Team
+    del_team_resp = await async_client.delete(
+        f"/api/v1/organizations/{org_id}/teams/{team_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert del_team_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_invitation_rejection_and_cancellation(async_client: AsyncClient):
+    owner_token, _ = await get_authenticated_user_tokens(async_client, "inv_manage_owner@devtrack.ai", "Inv Manage Owner")
+
+    org_resp = await async_client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Inv Manage Org"},
+    )
+    org_id = org_resp.json()["id"]
+
+    rejectee_token, _ = await get_authenticated_user_tokens(async_client, "rejectee@devtrack.ai", "Rejectee User")
+
+    # Invite user 1 (for rejection)
+    inv1_resp = await async_client.post(
+        f"/api/v1/organizations/{org_id}/invitations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"email": "rejectee@devtrack.ai", "role": "MEMBER"},
+    )
+    raw_token1 = inv1_resp.json()["raw_token"]
+
+    # Reject invitation
+    reject_resp = await async_client.post(
+        "/api/v1/organizations/invitations/reject",
+        headers={"Authorization": f"Bearer {rejectee_token}"},
+        json={"token": raw_token1},
+    )
+    assert reject_resp.status_code == 200
+    assert reject_resp.json()["status"] == "REJECTED"
+
+    # Invite user 2 (for cancellation by owner)
+    inv2_resp = await async_client.post(
+        f"/api/v1/organizations/{org_id}/invitations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"email": "cancel_target@devtrack.ai", "role": "MEMBER"},
+    )
+    inv2_id = inv2_resp.json()["invitation_id"]
+
+    # Cancel invitation
+    cancel_resp = await async_client.delete(
+        f"/api/v1/organizations/{org_id}/invitations/{inv2_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert cancel_resp.status_code == 200
+    assert cancel_resp.json()["status"] == "REVOKED"
+
+
+@pytest.mark.asyncio
+async def test_granular_roles_and_permissions(async_client: AsyncClient):
+    owner_token, _ = await get_authenticated_user_tokens(async_client, "pm_owner@devtrack.ai", "PM Owner")
+
+    org_resp = await async_client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Granular Roles Org"},
+    )
+    org_id = org_resp.json()["id"]
+
+    pm_token, pm_user = await get_authenticated_user_tokens(async_client, "pm@devtrack.ai", "PM User")
+
+    # Invite PM
+    inv_resp = await async_client.post(
+        f"/api/v1/organizations/{org_id}/invitations",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"email": "pm@devtrack.ai", "role": "PROJECT_MANAGER"},
+    )
+    await async_client.post(
+        "/api/v1/organizations/invitations/accept",
+        headers={"Authorization": f"Bearer {pm_token}"},
+        json={"token": inv_resp.json()["raw_token"]},
+    )
+
+    # PM creates team (allowed)
+    pm_team_resp = await async_client.post(
+        f"/api/v1/organizations/{org_id}/teams",
+        headers={"Authorization": f"Bearer {pm_token}"},
+        json={"name": "PM Managed Team"},
+    )
+    assert pm_team_resp.status_code == 201
+
+    # PM attempts to transfer ownership (forbidden 403)
+    pm_transfer = await async_client.post(
+        f"/api/v1/organizations/{org_id}/transfer-ownership",
+        headers={"Authorization": f"Bearer {pm_token}"},
+        json={"new_owner_id": pm_user["id"]},
+    )
+    assert pm_transfer.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_cross_organization_isolation_and_unauthorized_access(async_client: AsyncClient):
+    userA_token, _ = await get_authenticated_user_tokens(async_client, "usera@devtrack.ai", "User A")
+    userB_token, _ = await get_authenticated_user_tokens(async_client, "userb@devtrack.ai", "User B")
+
+    # User A creates Org A
+    orgA_resp = await async_client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {userA_token}"},
+        json={"name": "Org A"},
+    )
+    orgA_id = orgA_resp.json()["id"]
+
+    # User B attempts to view Org A (forbidden 403)
+    unauth_resp = await async_client.get(
+        f"/api/v1/organizations/{orgA_id}",
+        headers={"Authorization": f"Bearer {userB_token}"},
+    )
+    assert unauth_resp.status_code == 403

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevTrack AI — Project Management</title>
+  <meta name="description" content="AI-powered project management dashboard — create, track, and analyze your engineering projects with DevTrack AI." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Toast notification layer -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- App Shell -->
+  <div id="app" class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">⚡</span>
+          <span class="logo-text">DevTrack<span class="logo-accent">AI</span></span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-view="projects" id="nav-projects">
+          <span class="nav-icon">◈</span>
+          <span>Projects</span>
+        </a>
+        <a href="#" class="nav-item" data-view="templates" id="nav-templates">
+          <span class="nav-icon">⊞</span>
+          <span>Templates</span>
+        </a>
+        <a href="#" class="nav-item" data-view="analytics" id="nav-analytics">
+          <span class="nav-icon">◎</span>
+          <span>Analytics</span>
+        </a>
+        <a href="#" class="nav-item" data-view="archived" id="nav-archived">
+          <span class="nav-icon">⊛</span>
+          <span>Archived</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card" id="user-card">
+          <div class="user-avatar" id="user-avatar-sidebar">U</div>
+          <div class="user-info">
+            <span class="user-name" id="user-name-sidebar">Loading...</span>
+            <span class="user-role">Member</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="btn-icon" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+          <div class="breadcrumb" id="breadcrumb">
+            <span>Projects</span>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="org-selector" id="org-selector-container">
+            <select id="org-select" class="select-input" aria-label="Select organization">
+              <option value="">Select Organization…</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="btn-new-project" disabled>
+            <span>+</span> New Project
+          </button>
+        </div>
+      </header>
+
+      <!-- Views -->
+      <div class="content-area">
+
+        <!-- ═══ PROJECTS VIEW ═══ -->
+        <section class="view active" id="view-projects">
+          <!-- Search & Filter Bar -->
+          <div class="filter-bar">
+            <div class="search-wrapper">
+              <span class="search-icon">⌕</span>
+              <input
+                type="text"
+                id="search-input"
+                class="search-input"
+                placeholder="Search projects by name, key or description…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="filter-pills">
+              <button class="filter-pill active" data-filter="">All</button>
+              <button class="filter-pill" data-filter="KANBAN">Kanban</button>
+              <button class="filter-pill" data-filter="SCRUM">Scrum</button>
+              <button class="filter-pill" data-filter="BUG_TRACKING">Bug Tracking</button>
+              <button class="filter-pill" data-filter="ROADMAP">Roadmap</button>
+              <button class="filter-pill" data-filter="CUSTOM">Custom</button>
+            </div>
+          </div>
+
+          <!-- Stats Summary Row -->
+          <div class="stats-row" id="stats-row">
+            <div class="stat-card">
+              <span class="stat-value" id="stat-total">—</span>
+              <span class="stat-label">Total Projects</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="stat-active">—</span>
+              <span class="stat-label">Active</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="stat-members">—</span>
+              <span class="stat-label">Members</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="stat-health">—%</span>
+              <span class="stat-label">Avg Health</span>
+            </div>
+          </div>
+
+          <!-- Project Grid -->
+          <div class="project-grid" id="project-grid">
+            <div class="empty-state" id="empty-state">
+              <div class="empty-icon">◈</div>
+              <h3>No projects yet</h3>
+              <p>Select an organization and create your first project.</p>
+            </div>
+          </div>
+
+          <!-- Pagination -->
+          <div class="pagination" id="pagination" style="display:none">
+            <button class="btn btn-ghost btn-sm" id="btn-prev" disabled>← Prev</button>
+            <span class="pagination-info" id="pagination-info"></span>
+            <button class="btn btn-ghost btn-sm" id="btn-next" disabled>Next →</button>
+          </div>
+        </section>
+
+        <!-- ═══ TEMPLATES VIEW ═══ -->
+        <section class="view" id="view-templates">
+          <div class="view-header">
+            <h2 class="view-title">Project Templates</h2>
+            <p class="view-subtitle">Start fast with battle-tested engineering workflow templates.</p>
+          </div>
+          <div class="templates-grid" id="templates-grid">
+            <div class="skeleton-loader"></div>
+            <div class="skeleton-loader"></div>
+            <div class="skeleton-loader"></div>
+            <div class="skeleton-loader"></div>
+          </div>
+        </section>
+
+        <!-- ═══ ANALYTICS VIEW ═══ -->
+        <section class="view" id="view-analytics">
+          <div class="view-header">
+            <h2 class="view-title">Analytics Dashboard</h2>
+            <p class="view-subtitle">Velocity trends, issue distributions, and team workload insights.</p>
+          </div>
+          <div id="analytics-select-prompt" class="analytics-prompt">
+            <div class="empty-icon">◎</div>
+            <p>Select a project to view its analytics.</p>
+            <select id="analytics-project-select" class="select-input" style="margin-top:1rem;max-width:320px">
+              <option value="">Choose a project…</option>
+            </select>
+          </div>
+          <div id="analytics-content" style="display:none">
+            <div class="analytics-grid">
+              <div class="analytics-card wide">
+                <h3 class="card-label">Sprint Velocity Trend</h3>
+                <div class="velocity-chart" id="velocity-chart"></div>
+              </div>
+              <div class="analytics-card">
+                <h3 class="card-label">Issue Status Distribution</h3>
+                <div class="donut-chart-wrapper">
+                  <canvas id="status-donut" width="180" height="180"></canvas>
+                  <div class="donut-legend" id="donut-legend"></div>
+                </div>
+              </div>
+              <div class="analytics-card">
+                <h3 class="card-label">Member Workload</h3>
+                <div id="workload-bars"></div>
+              </div>
+              <div class="analytics-card">
+                <h3 class="card-label">Created vs Resolved</h3>
+                <div id="created-vs-resolved" class="two-metric-row"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ═══ ARCHIVED VIEW ═══ -->
+        <section class="view" id="view-archived">
+          <div class="view-header">
+            <h2 class="view-title">Archived Projects</h2>
+            <p class="view-subtitle">These projects are no longer active. You can restore any of them.</p>
+          </div>
+          <div class="project-grid" id="archived-grid">
+            <div class="empty-state">
+              <div class="empty-icon">⊛</div>
+              <h3>No archived projects</h3>
+              <p>Projects you archive will appear here.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══ PROJECT DETAIL PANEL (DRAWER) ═══ -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <aside class="drawer" id="project-drawer" role="dialog" aria-modal="true" aria-label="Project details">
+    <div class="drawer-header">
+      <div>
+        <span class="project-key-badge" id="drawer-key"></span>
+        <h2 id="drawer-title">Project Details</h2>
+        <p id="drawer-description" class="drawer-description"></p>
+      </div>
+      <button class="btn-icon drawer-close" id="btn-close-drawer" aria-label="Close">✕</button>
+    </div>
+    <div class="drawer-tabs">
+      <button class="drawer-tab active" data-tab="dashboard">Dashboard</button>
+      <button class="drawer-tab" data-tab="members">Members</button>
+      <button class="drawer-tab" data-tab="settings">Settings</button>
+    </div>
+    <div class="drawer-body">
+      <!-- Dashboard Tab -->
+      <div class="drawer-tab-content active" id="tab-dashboard">
+        <div class="dashboard-metrics" id="dashboard-metrics"></div>
+        <div class="workflow-section">
+          <h4 class="section-label">Workflow Columns</h4>
+          <div class="columns-row" id="workflow-columns"></div>
+        </div>
+      </div>
+      <!-- Members Tab -->
+      <div class="drawer-tab-content" id="tab-members">
+        <div class="members-header">
+          <h4 class="section-label">Team Members</h4>
+          <button class="btn btn-sm btn-primary" id="btn-add-member">+ Add Member</button>
+        </div>
+        <div class="members-list" id="members-list"></div>
+      </div>
+      <!-- Settings Tab -->
+      <div class="drawer-tab-content" id="tab-settings">
+        <form id="project-settings-form" class="settings-form" novalidate>
+          <div class="form-group">
+            <label for="settings-name">Project Name</label>
+            <input type="text" id="settings-name" class="input" />
+          </div>
+          <div class="form-group">
+            <label for="settings-desc">Description</label>
+            <textarea id="settings-desc" class="input textarea" rows="3"></textarea>
+          </div>
+          <div class="settings-actions">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <button type="button" class="btn btn-danger" id="btn-archive-project">Archive Project</button>
+            <button type="button" class="btn btn-ghost btn-danger" id="btn-delete-project">Delete Project</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ CREATE PROJECT MODAL ═══ -->
+  <div class="modal-overlay" id="create-modal-overlay">
+    <div class="modal" id="create-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 id="modal-title">New Project</h2>
+        <button class="btn-icon" id="btn-close-modal" aria-label="Close modal">✕</button>
+      </div>
+      <form id="create-project-form" novalidate>
+        <div class="form-group">
+          <label for="proj-name">Project Name <span class="required">*</span></label>
+          <input type="text" id="proj-name" class="input" placeholder="e.g. DevTrack Engine" required />
+        </div>
+        <div class="form-group">
+          <label for="proj-key">Project Key</label>
+          <input type="text" id="proj-key" class="input" placeholder="Auto-generated (e.g. DE)" maxlength="10" />
+          <span class="form-hint">Short identifier used in issue keys</span>
+        </div>
+        <div class="form-group">
+          <label for="proj-desc">Description</label>
+          <textarea id="proj-desc" class="input textarea" rows="2" placeholder="What is this project about?"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Template</label>
+          <div class="template-selector" id="modal-template-selector"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-project">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

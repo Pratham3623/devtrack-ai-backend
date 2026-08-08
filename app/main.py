@@ -1,7 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import api_router
@@ -64,6 +67,11 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 # Include API Routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# Mount Static Frontend SPA
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -72,4 +80,14 @@ async def root():
         "version": "1.0.0",
         "documentation": "/docs",
         "health": f"{settings.API_V1_STR}/health",
+        "ui": "/ui",
     }
+
+
+@app.get("/ui", include_in_schema=False)
+async def serve_ui():
+    """Serve the Project Management SPA."""
+    idx = os.path.join(_STATIC_DIR, "index.html")
+    if not os.path.exists(idx):
+        return {"error": "UI not found"}
+    return FileResponse(idx)

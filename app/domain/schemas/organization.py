@@ -16,6 +16,7 @@ class OrganizationCreateRequest(BaseModel):
 class OrganizationUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=255)
     logo_url: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 
 class OrganizationResponse(BaseModel):
@@ -27,6 +28,8 @@ class OrganizationResponse(BaseModel):
     logo_url: Optional[str] = None
     owner_id: uuid.UUID
     plan_tier: str
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
     created_at: datetime
 
 
@@ -70,9 +73,19 @@ class AcceptInvitationRequest(BaseModel):
     token: str
 
 
+class RejectInvitationRequest(BaseModel):
+    token: str
+
+
 class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
     description: Optional[str] = None
+
+
+class TeamUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=255)
+    description: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 
 class TeamResponse(BaseModel):
@@ -82,12 +95,28 @@ class TeamResponse(BaseModel):
     organization_id: uuid.UUID
     name: str
     description: Optional[str] = None
+    is_archived: bool = False
     created_at: datetime
 
 
 class AddTeamMemberRequest(BaseModel):
     user_id: uuid.UUID
     role: TeamRole = TeamRole.MEMBER
+
+
+class TeamMemberRoleUpdateRequest(BaseModel):
+    role: TeamRole
+
+
+class TeamMemberResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    team_id: uuid.UUID
+    user_id: uuid.UUID
+    role: TeamRole
+    joined_at: datetime
+    user: UserResponse
 
 
 class AuditLogResponse(BaseModel):
