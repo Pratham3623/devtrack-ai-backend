@@ -40,6 +40,9 @@ class Project(BaseModel):
     issues: Mapped[List["Issue"]] = relationship(
         "Issue", back_populates="project", cascade="all, delete-orphan"
     )
+    boards: Mapped[List["Board"]] = relationship(
+        "Board", back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 

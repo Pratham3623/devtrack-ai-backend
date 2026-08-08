@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, health, issues, organizations, projects
+from app.api.v1.endpoints import auth, boards, health, issues, organizations, projects
 
 api_router = APIRouter()
 
@@ -14,6 +14,9 @@ api_router.include_router(projects.org_router, prefix="/organizations", tags=["P
 
 # Issues: mounted under /organizations/{org_id}/projects/{project_id}/issues
 api_router.include_router(issues.router, prefix="/organizations", tags=["Issue Tracking Engine"])
+
+# Boards: mounted under /organizations/{org_id}/projects/{project_id}/boards
+api_router.include_router(boards.router, prefix="/organizations", tags=["Kanban Board Engine"])
 
 
 

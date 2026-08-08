@@ -11,6 +11,7 @@ from app.core.redis import get_redis
 from app.db.base import Base
 # Register all models with Base.metadata
 from app.domain.models.audit_log import AuditLog  # noqa: F401
+from app.domain.models.board import Board, BoardColumn  # noqa: F401
 from app.domain.models.invitation import Invitation  # noqa: F401
 from app.domain.models.issue import Issue  # noqa: F401
 from app.domain.models.organization import Organization, OrgMember  # noqa: F401
