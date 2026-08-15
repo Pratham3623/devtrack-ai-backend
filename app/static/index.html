@@ -30,6 +30,10 @@
           <span class="nav-icon">◈</span>
           <span>Projects</span>
         </a>
+        <a href="#" class="nav-item" data-view="board" id="nav-board">
+          <span class="nav-icon">📊</span>
+          <span>Kanban Board</span>
+        </a>
         <a href="#" class="nav-item" data-view="templates" id="nav-templates">
           <span class="nav-icon">⊞</span>
           <span>Templates</span>
@@ -79,6 +83,7 @@
 
       <!-- Views -->
       <div class="content-area">
+        
 
         <!-- ═══ PROJECTS VIEW ═══ -->
         <section class="view active" id="view-projects">
@@ -138,6 +143,65 @@
             <button class="btn btn-ghost btn-sm" id="btn-prev" disabled>← Prev</button>
             <span class="pagination-info" id="pagination-info"></span>
             <button class="btn btn-ghost btn-sm" id="btn-next" disabled>Next →</button>
+          </div>
+        </section>
+
+        <!-- ═══ KANBAN BOARD VIEW ═══ -->
+        <section class="view" id="view-board">
+          <div class="view-header board-view-header">
+            <div>
+              <h2 class="view-title" id="board-project-title">Kanban Board</h2>
+              <p class="view-subtitle" id="board-project-subtitle">Select a project to view and manage issues visually.</p>
+            </div>
+            <div class="board-header-actions">
+              <select id="board-project-select" class="select-input" style="max-width:240px" aria-label="Select project for board">
+                <option value="">Select Project…</option>
+              </select>
+              <select id="board-select" class="select-input" style="max-width:200px" aria-label="Select board">
+                <option value="">Default Board</option>
+              </select>
+              <button class="btn btn-sm btn-ghost" id="btn-add-column" disabled>+ Column</button>
+              <button class="btn btn-primary" id="btn-create-issue" disabled>+ New Issue</button>
+            </div>
+          </div>
+
+          <!-- Board Filter Bar -->
+          <div class="filter-bar" id="board-filter-bar">
+            <div class="search-wrapper">
+              <span class="search-icon">⌕</span>
+              <input
+                type="text"
+                id="board-search-input"
+                class="search-input"
+                placeholder="Search issues by title or description…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="filter-dropdowns">
+              <select id="filter-board-priority" class="select-input select-sm" aria-label="Filter by priority">
+                <option value="">All Priorities</option>
+                <option value="URGENT">Urgent</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+                <option value="NO_PRIORITY">No Priority</option>
+              </select>
+              <select id="filter-board-assignee" class="select-input select-sm" aria-label="Filter by assignee">
+                <option value="">All Assignees</option>
+              </select>
+              <select id="filter-board-label" class="select-input select-sm" style="display:none" aria-label="Filter by label">
+                <option value="">All Labels</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Board Columns Container -->
+          <div class="kanban-container" id="kanban-board-container">
+            <div class="empty-state" id="board-empty-prompt">
+              <div class="empty-icon">📊</div>
+              <h3>No project selected</h3>
+              <p>Select a project from the dropdown above to load its Kanban board.</p>
+            </div>
           </div>
         </section>
 
@@ -294,6 +358,143 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-cancel-modal">Cancel</button>
           <button type="submit" class="btn btn-primary" id="btn-submit-project">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══ CREATE/EDIT ISSUE MODAL ═══ -->
+  <div class="modal-overlay" id="issue-modal-overlay">
+    <div class="modal modal-lg" id="issue-modal" role="dialog" aria-modal="true" aria-labelledby="issue-modal-title">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <span class="project-key-badge" id="issue-modal-key">NEW</span>
+          <h2 id="issue-modal-title">Create Issue</h2>
+        </div>
+        <button class="btn-icon" id="btn-close-issue-modal" aria-label="Close modal">✕</button>
+      </div>
+      <form id="issue-form" novalidate>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="issue-title">Title <span class="required">*</span></label>
+            <input type="text" id="issue-title" class="input" placeholder="e.g. Implement JWT authentication" required />
+          </div>
+          <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div class="form-group">
+              <label for="issue-status">Status</label>
+              <select id="issue-status" class="select-input">
+                <option value="BACKLOG">Backlog</option>
+                <option value="TODO" selected>To Do</option>
+                <option value="IN_PROGRESS">In Progress</option>
+                <option value="IN_REVIEW">In Review</option>
+                <option value="DONE">Done</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="issue-priority">Priority</label>
+              <select id="issue-priority" class="select-input">
+                <option value="NO_PRIORITY">No Priority</option>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM" selected>Medium</option>
+                <option value="HIGH">High</option>
+                <option value="URGENT">Urgent</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div class="form-group">
+              <label for="issue-assignee">Assignee</label>
+              <select id="issue-assignee" class="select-input">
+                <option value="">Unassigned</option>
+              </select>
+            </div>
+            <div class="form-group" id="reporter-group" style="display:none">
+              <label>Reporter</label>
+              <div id="issue-reporter-name" class="input" style="background:var(--bg-tertiary);display:flex;align-items:center">—</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="issue-description">Description</label>
+            <textarea id="issue-description" class="input textarea" rows="4" placeholder="Detailed description of the task..."></textarea>
+          </div>
+
+          <!-- Extended sections (Labels, Comments, Subtasks, Dependencies) placeholder containers for 6F-6H -->
+          <div id="issue-modal-extended" style="display:none">
+            <hr style="border:none;border-top:1px solid var(--border-color);margin:1.25rem 0" />
+            
+            <!-- Labels section (Phase 6G) -->
+            <div id="issue-labels-section" style="margin-bottom:1.25rem;display:none">
+              <h4 class="section-label" style="margin-bottom:0.5rem">Labels</h4>
+              <div id="issue-labels-list" class="labels-flex" style="display:flex;flex-wrap:wrap;gap:0.4rem"></div>
+            </div>
+
+            <!-- Subtasks section (Phase 6H) -->
+            <div id="issue-subtasks-section" style="margin-bottom:1.25rem;display:none">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+                <h4 class="section-label">Subtasks</h4>
+                <button type="button" class="btn btn-xs btn-ghost" id="btn-add-subtask">+ Subtask</button>
+              </div>
+              <div id="subtasks-progress-wrapper" style="margin-bottom:0.5rem"></div>
+              <div id="subtasks-list" class="subtasks-list"></div>
+            </div>
+
+            <!-- Dependencies section (Phase 6H) -->
+            <div id="issue-dependencies-section" style="margin-bottom:1.25rem;display:none">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+                <h4 class="section-label">Dependencies</h4>
+                <button type="button" class="btn btn-xs btn-ghost" id="btn-add-dependency">+ Dependency</button>
+              </div>
+              <div id="dependencies-list" class="dependencies-list"></div>
+            </div>
+
+            <!-- Activity & Comments section (Phase 6F) -->
+            <div id="issue-activity-section" style="display:none">
+              <h4 class="section-label" style="margin-bottom:0.75rem">Comments & Activity</h4>
+              <div class="comment-input-box" style="margin-bottom:1rem">
+                <textarea id="comment-text-input" class="input textarea" rows="2" placeholder="Write a comment..."></textarea>
+                <button type="button" class="btn btn-sm btn-primary" id="btn-submit-comment" style="margin-top:0.5rem">Comment</button>
+              </div>
+              <div id="activity-timeline" class="activity-timeline"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-issue-modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btn-archive-issue" style="display:none">Archive</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-issue">Save Issue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══ CREATE COLUMN MODAL ═══ -->
+  <div class="modal-overlay" id="column-modal-overlay">
+    <div class="modal" id="column-modal" role="dialog" aria-modal="true" aria-labelledby="column-modal-title">
+      <div class="modal-header">
+        <h2 id="column-modal-title">Add Board Column</h2>
+        <button class="btn-icon" id="btn-close-column-modal" aria-label="Close modal">✕</button>
+      </div>
+      <form id="column-form" novalidate>
+        <div class="form-group">
+          <label for="column-name">Column Name <span class="required">*</span></label>
+          <input type="text" id="column-name" class="input" placeholder="e.g. Code Review" required />
+        </div>
+        <div class="form-group">
+          <label for="column-status">Mapped Status <span class="required">*</span></label>
+          <select id="column-status" class="select-input" required>
+            <option value="BACKLOG">Backlog</option>
+            <option value="TODO">To Do</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="IN_REVIEW">In Review</option>
+            <option value="DONE">Done</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-column-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-column">Add Column</button>
         </div>
       </form>
     </div>

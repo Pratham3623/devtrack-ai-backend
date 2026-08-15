@@ -101,6 +101,7 @@ class IssueRepository(BaseRepository[Issue]):
         priority: Optional[str] = None,
         assignee_id: Optional[uuid.UUID] = None,
         reporter_id: Optional[uuid.UUID] = None,
+        label_id: Optional[uuid.UUID] = None,
         include_archived: bool = False,
         sort_by: str = "issue_number",
         sort_order: str = "asc",
@@ -124,6 +125,10 @@ class IssueRepository(BaseRepository[Issue]):
 
         if reporter_id:
             stmt = stmt.where(Issue.reporter_id == reporter_id)
+
+        if label_id:
+            from app.domain.models.label import issue_labels
+            stmt = stmt.join(issue_labels, Issue.id == issue_labels.c.issue_id).where(issue_labels.c.label_id == label_id)
 
         if query_str:
             pattern = f"%{query_str}%"

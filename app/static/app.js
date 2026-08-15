@@ -22,6 +22,18 @@ const state = {
   filterType: '',
   activeView: 'projects',
   selectedTemplate: 'KANBAN',
+  // Kanban board state
+  boardProjectId: null,
+  boards: [],
+  activeBoard: null,
+  boardIssues: [],
+  boardMembers: [],
+  boardQuery: '',
+  boardPriorityFilter: '',
+  boardAssigneeFilter: '',
+  boardLabelFilter: '',
+  draggedIssueId: null,
+  editingIssue: null,
 };
 
 /* ── Helpers ────────────────────────────────────────────── */
@@ -674,6 +686,766 @@ function renderCreatedVsResolved(data) {
     </div>`;
 }
 
+/* ── Kanban Board Module ──────────────────────────────────── */
+
+function populateBoardProjectSelect() {
+  const sel = qs('#board-project-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select Project…</option>';
+  state.projects.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.key} - ${p.name}`;
+    if (p.id === state.boardProjectId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadBoardView(projectId = null) {
+  if (!state.orgId) return;
+  if (!projectId) {
+    if (state.projects.length && !state.boardProjectId) {
+      state.boardProjectId = state.projects[0].id;
+    }
+  } else {
+    state.boardProjectId = projectId;
+  }
+
+  populateBoardProjectSelect();
+  const projSel = qs('#board-project-select');
+  if (projSel) projSel.value = state.boardProjectId || '';
+
+  const container = qs('#kanban-board-container');
+  if (!state.boardProjectId) {
+    if (container) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          <h3>No project selected</h3>
+          <p>Select a project from the dropdown above to load its Kanban board.</p>
+        </div>`;
+    }
+    qs('#btn-create-issue').disabled = true;
+    qs('#btn-add-column').disabled = true;
+    return;
+  }
+
+  qs('#btn-create-issue').disabled = false;
+  qs('#btn-add-column').disabled = false;
+
+  loadBoardMembers(state.boardProjectId);
+
+  try {
+    const boards = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards`);
+    state.boards = boards || [];
+    
+    const boardSel = qs('#board-select');
+    if (boardSel) {
+      boardSel.innerHTML = state.boards.map(b => `<option value="${b.id}">${escHtml(b.name)}${b.is_default ? ' (Default)' : ''}</option>`).join('');
+    }
+
+    let targetBoardId = state.boards.length ? state.boards[0].id : null;
+    if (targetBoardId) {
+      await loadBoardDetails(targetBoardId);
+    } else {
+      const newBoard = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards`, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Default Board', is_default: true }),
+      });
+      state.boards = [newBoard];
+      await loadBoardDetails(newBoard.id);
+    }
+  } catch (e) {
+    toast(`Failed to load board: ${e.message}`, 'error');
+  }
+}
+
+async function loadBoardMembers(projectId) {
+  try {
+    const members = await apiFetch(`/organizations/${state.orgId}/projects/${projectId}/members`);
+    state.boardMembers = members || [];
+    populateAssigneeDropdowns();
+  } catch (_) {
+    state.boardMembers = [];
+  }
+}
+
+function populateAssigneeDropdowns() {
+  const filterSel = qs('#filter-board-assignee');
+  const modalSel = qs('#issue-assignee');
+  
+  if (filterSel) {
+    filterSel.innerHTML = '<option value="">All Assignees</option>' +
+      state.boardMembers.map(m => `<option value="${m.user.id}">${escHtml(m.user.full_name || m.user.email)}</option>`).join('');
+  }
+  if (modalSel) {
+    modalSel.innerHTML = '<option value="">Unassigned</option>' +
+      state.boardMembers.map(m => `<option value="${m.user.id}">${escHtml(m.user.full_name || m.user.email)}</option>`).join('');
+  }
+}
+
+async function loadBoardDetails(boardId) {
+  try {
+    const board = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards/${boardId}`);
+    state.activeBoard = board;
+
+    if (!board.columns || !board.columns.length) {
+      const defaultCols = [
+        { name: 'To Do', mapped_status: 'TODO' },
+        { name: 'In Progress', mapped_status: 'IN_PROGRESS' },
+        { name: 'In Review', mapped_status: 'IN_REVIEW' },
+        { name: 'Done', mapped_status: 'DONE' },
+      ];
+      for (const c of defaultCols) {
+        try {
+          await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards/${boardId}/columns`, {
+            method: 'POST',
+            body: JSON.stringify(c),
+          });
+        } catch (_) {}
+      }
+      state.activeBoard = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards/${boardId}`);
+    }
+
+    await fetchBoardIssues();
+  } catch (e) {
+    toast(`Error loading board details: ${e.message}`, 'error');
+  }
+}
+
+async function fetchBoardIssues() {
+  if (!state.boardProjectId) return;
+  const params = new URLSearchParams({ page: 1, size: 100 });
+  if (state.boardQuery) params.set('q', state.boardQuery);
+  if (state.boardPriorityFilter) params.set('priority', state.boardPriorityFilter);
+  if (state.boardAssigneeFilter) params.set('assignee_id', state.boardAssigneeFilter);
+
+  try {
+    const data = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues?${params}`);
+    state.boardIssues = data.items || [];
+    renderBoardUI();
+  } catch (e) {
+    toast(`Error loading issues: ${e.message}`, 'error');
+  }
+}
+
+function renderBoardUI() {
+  const container = qs('#kanban-board-container');
+  if (!container || !state.activeBoard) return;
+
+  const cols = state.activeBoard.columns || [];
+  if (!cols.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📊</div>
+        <h3>No columns in board</h3>
+        <p>Click "+ Column" above to add your first column.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = cols.map(col => {
+    const colIssues = state.boardIssues.filter(i => i.status === col.mapped_status);
+    return `
+      <div class="kanban-column" data-col-id="${col.id}" data-status="${col.mapped_status}">
+        <div class="kanban-column-header">
+          <div class="column-title-group">
+            <span class="column-title">${escHtml(col.name)}</span>
+            <span class="column-count">${colIssues.length}</span>
+          </div>
+          <button class="btn-icon btn-add-col-issue" data-status="${col.mapped_status}" title="Add issue to ${escHtml(col.name)}">+</button>
+        </div>
+        <div class="kanban-cards-list" data-status="${col.mapped_status}">
+          ${colIssues.map(issue => renderIssueCardHTML(issue)).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  wireDragAndDropEvents();
+}
+
+function renderIssueCardHTML(issue) {
+  const assigneeName = issue.assignee_id ? getAssigneeName(issue.assignee_id) : 'Unassigned';
+  const initial = assigneeName !== 'Unassigned' ? assigneeName[0].toUpperCase() : '?';
+
+  return `
+    <div class="kanban-card" draggable="true" data-issue-id="${issue.id}" id="card-${issue.id}">
+      <div class="card-header">
+        <span class="card-key">${issue.identifier}</span>
+        <span class="priority-pill priority-${issue.priority}">${issue.priority.replace('_', ' ')}</span>
+      </div>
+      <div class="card-title">${escHtml(issue.title)}</div>
+      <div class="card-footer">
+        <div class="member-chip" title="Assignee: ${escHtml(assigneeName)}">${initial}</div>
+        <span style="font-size:0.72rem;color:var(--text-muted)">${new Date(issue.created_at).toLocaleDateString()}</span>
+      </div>
+    </div>`;
+}
+
+function getAssigneeName(userId) {
+  const m = state.boardMembers.find(mem => mem.user.id === userId);
+  return m ? (m.user.full_name || m.user.email) : 'Member';
+}
+
+function wireDragAndDropEvents() {
+  const cards = qsa('.kanban-card');
+  const cols = qsa('.kanban-column');
+
+  cards.forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      state.draggedIssueId = card.dataset.issueId;
+      card.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', card.dataset.issueId);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      state.draggedIssueId = null;
+      cols.forEach(c => c.classList.remove('drag-over'));
+    });
+
+    card.addEventListener('click', (e) => {
+      const issueId = card.dataset.issueId;
+      const issue = state.boardIssues.find(i => i.id === issueId);
+      if (issue) openIssueModal(issue);
+    });
+  });
+
+  cols.forEach(col => {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('drag-over');
+    });
+
+    col.addEventListener('dragleave', (e) => {
+      if (!col.contains(e.relatedTarget)) {
+        col.classList.remove('drag-over');
+      }
+    });
+
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const issueId = e.dataTransfer.getData('text/plain') || state.draggedIssueId;
+      if (!issueId) return;
+
+      const colId = col.dataset.colId;
+      const targetStatus = col.dataset.status;
+
+      const issueIndex = state.boardIssues.findIndex(i => i.id === issueId);
+      if (issueIndex === -1) return;
+      const originalStatus = state.boardIssues[issueIndex].status;
+
+      if (originalStatus === targetStatus) return;
+
+      // Optimistic local state update
+      state.boardIssues[issueIndex].status = targetStatus;
+      renderBoardUI();
+
+      try {
+        await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards/${state.activeBoard.id}/issues/${issueId}/move`, {
+          method: 'POST',
+          body: JSON.stringify({ column_id: colId }),
+        });
+        toast('Issue moved.', 'info');
+      } catch (err) {
+        // Rollback state on failure
+        state.boardIssues[issueIndex].status = originalStatus;
+        renderBoardUI();
+        toast(`Move failed: ${err.message}`, 'error');
+      }
+    });
+  });
+
+  qsa('.btn-add-col-issue').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openIssueModal(null, btn.dataset.status);
+    });
+  });
+}
+
+/* ── Issue Modal ─────────────────────────────────────────── */
+function openIssueModal(issue = null, preselectStatus = 'TODO') {
+  state.editingIssue = issue;
+  const overlay = qs('#issue-modal-overlay');
+  const title = qs('#issue-modal-title');
+  const keyBadge = qs('#issue-modal-key');
+  const form = qs('#issue-form');
+
+  form.reset();
+  populateAssigneeDropdowns();
+
+  if (issue) {
+    title.textContent = `Edit Issue ${issue.identifier}`;
+    keyBadge.textContent = issue.identifier;
+    qs('#issue-title').value = issue.title;
+    qs('#issue-description').value = issue.description || '';
+    qs('#issue-status').value = issue.status;
+    qs('#issue-priority').value = issue.priority;
+    qs('#issue-assignee').value = issue.assignee_id || '';
+    qs('#btn-archive-issue').style.display = 'inline-flex';
+    qs('#issue-modal-extended').style.display = 'block';
+
+    // Hook extended sections for later phases
+    if (typeof loadCommentsAndActivity === 'function') loadCommentsAndActivity(issue.id);
+    if (typeof loadIssueLabels === 'function') loadIssueLabels(issue.id);
+    if (typeof loadIssueSubtasks === 'function') loadIssueSubtasks(issue.id);
+    if (typeof loadIssueDependencies === 'function') loadIssueDependencies(issue.id);
+  } else {
+    title.textContent = 'Create Issue';
+    keyBadge.textContent = 'NEW';
+    qs('#issue-status').value = preselectStatus;
+    qs('#issue-priority').value = 'MEDIUM';
+    qs('#issue-assignee').value = '';
+    qs('#btn-archive-issue').style.display = 'none';
+    qs('#issue-modal-extended').style.display = 'none';
+  }
+
+  overlay.classList.add('active');
+  qs('#issue-title').focus();
+}
+
+function closeIssueModal() {
+  qs('#issue-modal-overlay').classList.remove('active');
+  state.editingIssue = null;
+}
+
+async function handleIssueFormSubmit(e) {
+  e.preventDefault();
+  const titleVal = qs('#issue-title').value.trim();
+  if (!titleVal) { toast('Issue title is required.', 'error'); return; }
+
+  const dto = {
+    title: titleVal,
+    description: qs('#issue-description').value.trim() || undefined,
+    status: qs('#issue-status').value,
+    priority: qs('#issue-priority').value,
+    assignee_id: qs('#issue-assignee').value || undefined,
+  };
+
+  const btn = qs('#btn-submit-issue');
+  btn.disabled = true;
+
+  try {
+    if (state.editingIssue) {
+      await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${state.editingIssue.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      });
+      toast('Issue updated.', 'success');
+    } else {
+      await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues`, {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+      toast('Issue created.', 'success');
+    }
+    closeIssueModal();
+    await fetchBoardIssues();
+  } catch (err) {
+    toast(`Save issue failed: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function archiveCurrentEditingIssue() {
+  if (!state.editingIssue) return;
+  try {
+    await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${state.editingIssue.id}/archive`, {
+      method: 'POST',
+    });
+    toast('Issue archived.', 'info');
+    closeIssueModal();
+    await fetchBoardIssues();
+  } catch (err) {
+    toast(`Archive failed: ${err.message}`, 'error');
+  }
+}
+
+/* ── Comments & Activity Timeline Module (Phase 6F) ───────── */
+async function loadCommentsAndActivity(issueId) {
+  const container = qs('#activity-timeline');
+  const section = qs('#issue-activity-section');
+  if (!container || !section) return;
+
+  section.style.display = 'block';
+  container.innerHTML = '<div class="skeleton-loader" style="height:60px"></div>';
+
+  try {
+    const activity = await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/activity`
+    );
+    renderActivityTimeline(activity || [], issueId);
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--accent-red);font-size:0.82rem">Failed to load activity: ${err.message}</p>`;
+  }
+
+  // Wire new comment submit
+  const btnSubmit = qs('#btn-submit-comment');
+  if (btnSubmit) {
+    btnSubmit.onclick = async () => {
+      const input = qs('#comment-text-input');
+      const text = input ? input.value.trim() : '';
+      if (!text) { toast('Comment content cannot be empty.', 'error'); return; }
+
+      btnSubmit.disabled = true;
+      try {
+        await apiFetch(
+          `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/comments`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ content: text }),
+          }
+        );
+        if (input) input.value = '';
+        toast('Comment added.', 'success');
+        await loadCommentsAndActivity(issueId);
+      } catch (e) {
+        toast(`Comment failed: ${e.message}`, 'error');
+      } finally {
+        btnSubmit.disabled = false;
+      }
+    };
+  }
+}
+
+function renderActivityTimeline(items, issueId) {
+  const container = qs('#activity-timeline');
+  if (!container) return;
+
+  if (!items.length) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No comments or activity history yet.</p>';
+    return;
+  }
+
+  container.innerHTML = items
+    .map((item) => {
+      const isComment = item.type === 'comment';
+      const initial = item.actor_name ? item.actor_name[0].toUpperCase() : 'U';
+      const timeStr = new Date(item.timestamp).toLocaleString();
+      const isAuthor = state.user && item.actor_id === state.user.id;
+
+      if (isComment) {
+        return `
+          <div class="activity-item comment-item" data-comment-id="${item.id}" style="margin-bottom:0.85rem;padding:0.75rem;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-md)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">
+              <div style="display:flex;align-items:center;gap:0.4rem">
+                <div class="member-chip" style="margin:0">${initial}</div>
+                <strong style="font-size:0.82rem">${escHtml(item.actor_name)}</strong>
+                <span style="font-size:0.72rem;color:var(--text-muted)">${timeStr}</span>
+              </div>
+              ${
+                isAuthor
+                  ? `<div class="comment-actions" style="display:flex;gap:0.3rem">
+                      <button class="btn-xs btn-ghost btn-edit-comment" data-id="${item.id}">Edit</button>
+                      <button class="btn-xs btn-ghost btn-danger btn-delete-comment" data-id="${item.id}">Delete</button>
+                    </div>`
+                  : ''
+              }
+            </div>
+            <div class="comment-body" id="cbody-${item.id}" style="font-size:0.85rem;color:var(--text-primary);white-space:pre-wrap">${escHtml(item.content || '')}</div>
+          </div>`;
+      } else {
+        return `
+          <div class="activity-item audit-item" style="margin-bottom:0.6rem;font-size:0.78rem;color:var(--text-secondary);display:flex;align-items:center;gap:0.4rem">
+            <span style="color:var(--accent-purple)">●</span>
+            <strong>${escHtml(item.actor_name)}</strong>
+            <span>${item.action.replace('_', ' ').toLowerCase()}</span>
+            <span style="color:var(--text-muted);margin-left:auto">${timeStr}</span>
+          </div>`;
+      }
+    })
+    .join('');
+
+/* ── Labels Module (Phase 6G) ─────────────────────────────── */
+async function loadProjectLabels(projectId) {
+  if (!state.orgId || !projectId) return [];
+  try {
+    const labels = await apiFetch(`/organizations/${state.orgId}/projects/${projectId}/labels`);
+    state.projectLabels = labels || [];
+    populateLabelFilterDropdown();
+    return state.projectLabels;
+  } catch (_) {
+    state.projectLabels = [];
+    return [];
+  }
+}
+
+function populateLabelFilterDropdown() {
+  const sel = qs('#filter-board-label');
+  if (!sel) return;
+  if (!state.projectLabels || !state.projectLabels.length) {
+    sel.style.display = 'none';
+    return;
+  }
+  sel.style.display = 'inline-block';
+  sel.innerHTML = '<option value="">All Labels</option>' +
+    state.projectLabels.map(l => `<option value="${l.id}">${escHtml(l.name)}</option>`).join('');
+}
+
+async function loadIssueLabels(issueId) {
+  const section = qs('#issue-labels-section');
+  const container = qs('#issue-labels-list');
+  if (!section || !container) return;
+
+  section.style.display = 'block';
+  container.innerHTML = '<div class="skeleton-loader" style="height:24px;width:120px"></div>';
+
+  await loadProjectLabels(state.boardProjectId);
+
+  try {
+    const assignedLabels = await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/labels`
+    );
+    renderIssueLabels(assignedLabels || [], issueId);
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--accent-red);font-size:0.8rem">${err.message}</p>`;
+  }
+}
+
+function renderIssueLabels(assignedLabels, issueId) {
+  const container = qs('#issue-labels-list');
+  if (!container) return;
+
+  const assignedIds = new Set(assignedLabels.map(l => l.id));
+
+  if (!state.projectLabels || !state.projectLabels.length) {
+    container.innerHTML = `
+      <span style="font-size:0.78rem;color:var(--text-muted)">No project labels created.</span>
+      <button type="button" class="btn-xs btn-ghost" id="btn-create-proj-label">+ Create Label</button>`;
+    const btnCreate = qs('#btn-create-proj-label');
+    if (btnCreate) {
+      btnCreate.onclick = async () => {
+        const name = prompt('Enter label name:');
+        if (!name || !name.trim()) return;
+        try {
+          await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/labels`, {
+            method: 'POST',
+            body: JSON.stringify({ name: name.trim(), color: '#6366f1' }),
+          });
+          toast('Label created.', 'success');
+          await loadIssueLabels(issueId);
+        } catch (e) {
+          toast(`Create label failed: ${e.message}`, 'error');
+        }
+      };
+    }
+    return;
+  }
+
+  container.innerHTML = state.projectLabels.map(label => {
+    const isAssigned = assignedIds.has(label.id);
+    return `
+      <span class="label-chip${isAssigned ? ' assigned' : ''}" data-label-id="${label.id}" style="font-size:0.75rem;padding:3px 8px;border-radius:999px;cursor:pointer;border:1px solid ${label.color};background:${isAssigned ? label.color : 'transparent'};color:${isAssigned ? '#fff' : label.color}">
+        ${isAssigned ? '✓ ' : '+ '}${escHtml(label.name)}
+      </span>`;
+  }).join('') + ` <button type="button" class="btn-xs btn-ghost" id="btn-create-proj-label" style="margin-left:0.4rem">+ Label</button>`;
+
+  qsa('.label-chip', container).forEach(chip => {
+    chip.onclick = async () => {
+      const labelId = chip.dataset.labelId;
+      const isAssigned = chip.classList.contains('assigned');
+      try {
+        if (isAssigned) {
+          await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/labels/${labelId}`, {
+            method: 'DELETE',
+          });
+        } else {
+          await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/labels`, {
+            method: 'POST',
+            body: JSON.stringify({ label_id: labelId }),
+          });
+        }
+        await loadIssueLabels(issueId);
+      } catch (e) {
+        toast(`Toggle label failed: ${e.message}`, 'error');
+      }
+    };
+  });
+
+/* ── Subtasks & Dependencies Module (Phase 6H) ───────────── */
+async function loadIssueSubtasks(issueId) {
+  const section = qs('#issue-subtasks-section');
+  const container = qs('#subtasks-list');
+  const progContainer = qs('#subtasks-progress-wrapper');
+  if (!section || !container) return;
+
+  section.style.display = 'block';
+  container.innerHTML = '<div class="skeleton-loader" style="height:40px"></div>';
+
+  try {
+    const subtasks = await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/subtasks`
+    );
+    const progress = await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/subtasks/progress`
+    );
+
+    if (progContainer && progress) {
+      progContainer.innerHTML = `
+        <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:3px;color:var(--text-secondary)">
+          <span>Progress: ${progress.completed_subtasks}/${progress.total_subtasks} completed</span>
+          <span>${progress.completion_percentage}%</span>
+        </div>
+        <div style="height:6px;background:var(--bg-tertiary);border-radius:999px;overflow:hidden">
+          <div style="height:100%;background:var(--accent-green);width:${progress.completion_percentage}%"></div>
+        </div>`;
+    }
+
+    renderSubtasksList(subtasks || [], issueId);
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--accent-red);font-size:0.8rem">${err.message}</p>`;
+  }
+
+  const btnAdd = qs('#btn-add-subtask');
+  if (btnAdd) {
+    btnAdd.onclick = async () => {
+      const title = prompt('Enter subtask title:');
+      if (!title || !title.trim()) return;
+      try {
+        await apiFetch(
+          `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/subtasks`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ title: title.trim() }),
+          }
+        );
+        toast('Subtask created.', 'success');
+        await loadIssueSubtasks(issueId);
+      } catch (e) {
+        toast(`Subtask failed: ${e.message}`, 'error');
+      }
+    };
+  }
+}
+
+function renderSubtasksList(subtasks, parentIssueId) {
+  const container = qs('#subtasks-list');
+  if (!container) return;
+
+  if (!subtasks.length) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">No subtasks created yet.</p>';
+    return;
+  }
+
+  container.innerHTML = subtasks.map(s => {
+    const isDone = s.status === 'DONE';
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0.6rem;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);margin-bottom:0.35rem">
+        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;cursor:pointer;${isDone ? 'text-decoration:line-through;color:var(--text-muted)' : ''}">
+          <input type="checkbox" class="subtask-chk" data-id="${s.id}" ${isDone ? 'checked' : ''} />
+          <span>${s.identifier}: ${escHtml(s.title)}</span>
+        </label>
+        <span class="priority-pill priority-${s.priority}" style="font-size:0.62rem">${s.priority}</span>
+      </div>`;
+  }).join('');
+
+  qsa('.subtask-chk', container).forEach(chk => {
+    chk.onchange = async () => {
+      const sid = chk.dataset.id;
+      const newStatus = chk.checked ? 'DONE' : 'TODO';
+      try {
+        await apiFetch(
+          `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${sid}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ status: newStatus }),
+          }
+        );
+        await loadIssueSubtasks(parentIssueId);
+      } catch (e) {
+        toast(`Update subtask status failed: ${e.message}`, 'error');
+      }
+    };
+  });
+}
+
+async function loadIssueDependencies(issueId) {
+  const section = qs('#issue-dependencies-section');
+  const container = qs('#dependencies-list');
+  if (!section || !container) return;
+
+  section.style.display = 'block';
+  container.innerHTML = '<div class="skeleton-loader" style="height:40px"></div>';
+
+  try {
+    const deps = await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/dependencies`
+    );
+    renderDependenciesList(deps || [], issueId);
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--accent-red);font-size:0.8rem">${err.message}</p>`;
+  }
+
+  const btnAdd = qs('#btn-add-dependency');
+  if (btnAdd) {
+    btnAdd.onclick = async () => {
+      const targetId = prompt('Enter target Issue UUID to link:');
+      if (!targetId || !targetId.trim()) return;
+      const type = prompt('Enter dependency type (BLOCKS, BLOCKED_BY, RELATES_TO):', 'BLOCKS');
+      if (!type || !type.trim()) return;
+
+      try {
+        await apiFetch(
+          `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/dependencies`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              target_issue_id: targetId.trim(),
+              dependency_type: type.trim().toUpperCase(),
+            }),
+          }
+        );
+        toast('Dependency linked.', 'success');
+        await loadIssueDependencies(issueId);
+      } catch (e) {
+        toast(`Dependency link failed: ${e.message}`, 'error');
+      }
+    };
+  }
+}
+
+function renderDependenciesList(deps, issueId) {
+  const container = qs('#dependencies-list');
+  if (!container) return;
+
+  if (!deps.length) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">No linked dependencies.</p>';
+    return;
+  }
+
+  container.innerHTML = deps.map(d => {
+    const target = d.target_issue || {};
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.4rem 0.6rem;background:var(--bg-primary);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);margin-bottom:0.35rem;font-size:0.8rem">
+        <div>
+          <span style="font-weight:700;color:var(--accent-purple);margin-right:0.4rem">${d.dependency_type}</span>
+          <span>${target.identifier || 'ISSUE'}: ${escHtml(target.title || '')}</span>
+        </div>
+        <button class="btn-xs btn-ghost btn-danger btn-del-dep" data-id="${d.id}">✕</button>
+      </div>`;
+  }).join('');
+
+  qsa('.btn-del-dep', container).forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await apiFetch(
+          `/organizations/${state.orgId}/projects/${state.boardProjectId}/issues/${issueId}/dependencies/${btn.dataset.id}`,
+          { method: 'DELETE' }
+        );
+        toast('Dependency removed.', 'info');
+        await loadIssueDependencies(issueId);
+      } catch (e) {
+        toast(`Remove dependency failed: ${e.message}`, 'error');
+      }
+    };
+  });
+}
+
 /* ── Navigation ─────────────────────────────────────────── */
 function switchView(name) {
   state.activeView = name;
@@ -685,12 +1457,19 @@ function switchView(name) {
   qsa('.view').forEach(v => v.classList.remove('active'));
   qs(`#view-${name}`).classList.add('active');
 
-  const labels = { projects: 'Projects', templates: 'Templates', analytics: 'Analytics', archived: 'Archived' };
+  const labels = { projects: 'Projects', board: 'Kanban Board', templates: 'Templates', analytics: 'Analytics', archived: 'Archived' };
   qs('#breadcrumb').textContent = labels[name] || name;
 
   if (name === 'archived') fetchProjects(true);
   if (name === 'analytics') {
     if (!state.projects.length && state.orgId) fetchProjects();
+  }
+  if (name === 'board') {
+    if (!state.projects.length && state.orgId) {
+      fetchProjects().then(() => loadBoardView());
+    } else {
+      loadBoardView();
+    }
   }
 }
 
@@ -730,6 +1509,7 @@ function wireEvents() {
     if (state.orgId) {
       state.page = 1;
       await fetchProjects();
+      if (state.activeView === 'board') loadBoardView();
     } else {
       qs('#project-grid').innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><h3>Select an organization</h3></div>';
     }
@@ -803,11 +1583,71 @@ function wireEvents() {
     }
   });
 
+  // ── Board Event Wire ──
+  const boardProjSel = qs('#board-project-select');
+  if (boardProjSel) {
+    boardProjSel.addEventListener('change', (e) => {
+      if (e.target.value) loadBoardView(e.target.value);
+    });
+  }
+
+  const boardSel = qs('#board-select');
+  if (boardSel) {
+    boardSel.addEventListener('change', (e) => {
+      if (e.target.value) loadBoardDetails(e.target.value);
+    });
+  }
+
+  const btnCreateIssue = qs('#btn-create-issue');
+  if (btnCreateIssue) {
+    btnCreateIssue.addEventListener('click', () => openIssueModal());
+  }
+
+  const btnAddCol = qs('#btn-add-column');
+  if (btnAddCol) {
+    btnAddCol.addEventListener('click', () => openColumnModal());
+  }
+
+  // Issue modal events
+  qs('#btn-close-issue-modal').addEventListener('click', closeIssueModal);
+  qs('#btn-cancel-issue-modal').addEventListener('click', closeIssueModal);
+  qs('#issue-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === qs('#issue-modal-overlay')) closeIssueModal();
+  });
+  qs('#issue-form').addEventListener('submit', handleIssueFormSubmit);
+  qs('#btn-archive-issue').addEventListener('click', archiveCurrentEditingIssue);
+
+  // Column modal events
+  qs('#btn-close-column-modal').addEventListener('click', closeColumnModal);
+  qs('#btn-cancel-column-modal').addEventListener('click', closeColumnModal);
+  qs('#column-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === qs('#column-modal-overlay')) closeColumnModal();
+  });
+  qs('#column-form').addEventListener('submit', handleColumnFormSubmit);
+
+  // Board Filter Events
+  qs('#board-search-input').addEventListener('input', debounce(async (e) => {
+    state.boardQuery = e.target.value.trim();
+    await fetchBoardIssues();
+  }, 350));
+
+  qs('#filter-board-priority').addEventListener('change', async (e) => {
+    state.boardPriorityFilter = e.target.value;
+    await fetchBoardIssues();
+  });
+
+  qs('#filter-board-assignee').addEventListener('change', async (e) => {
+    state.boardAssigneeFilter = e.target.value;
+    await fetchBoardIssues();
+  });
+
   // Keyboard: Escape to close
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       closeDrawer();
       closeCreateModal();
+      closeIssueModal();
+      closeColumnModal();
     }
   });
 }
