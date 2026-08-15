@@ -9,7 +9,16 @@ __pycache__/
 # Virtual environments
 venv/
 env/
+# Environment & Secrets
 .env
+.env.*
+!.env.example
+!.env.production.example
+
+# Local databases
+*.db
+*.sqlite
+devtrack_dev.db
 .venv/
 
 # pytest

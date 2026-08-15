@@ -1,0 +1,67 @@
+# ==============================================================================
+# DevTrack AI — Render Infrastructure as Code Blueprint (render.yaml)
+# Deploy with 1 click on Render Dashboard (New -> Blueprint)
+# ==============================================================================
+
+services:
+  # ── FastAPI Web API Service ──────────────────────────────────────────────────
+  - type: web
+    name: devtrack-backend-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    numInstances: 1
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: API_V1_STR
+        value: /api/v1
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: devtrack-postgres-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: devtrack-redis-cache
+          property: connectionString
+      - key: USE_SQLITE
+        value: "false"
+      - key: BACKEND_CORS_ORIGINS
+        value: '["https://devtrack-frontend-ui.onrender.com","https://devtrack-backend-api.onrender.com"]'
+
+  # ── Redis Key-Value & PubSub Cache ───────────────────────────────────────────
+  - type: redis
+    name: devtrack-redis-cache
+    plan: starter
+    region: oregon
+    ipAllowList: []
+
+  # ── Static Web Frontend (SPA) ────────────────────────────────────────────────
+  - type: web
+    name: devtrack-frontend-ui
+    env: static
+    buildCommand: "echo 'Static build ready'"
+    staticPublishPath: ./app/static
+    routes:
+      - type: rewrite
+        source: /api/v1/*
+        destination: https://devtrack-backend-api.onrender.com/api/v1/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  # ── Managed PostgreSQL Database ──────────────────────────────────────────────
+  - name: devtrack-postgres-db
+    databaseName: devtrack_production_db
+    user: devtrack_user
+    plan: starter
+    region: oregon
+    postgresMajorVersion: 16
