@@ -1,6 +1,8 @@
+import time
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, status
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -13,41 +15,61 @@ from app.db.session import get_db
 router = APIRouter()
 
 
+def _uptime_seconds(request: Request) -> float:
+    start = getattr(request.app.state, "start_time", time.time())
+    return round(time.time() - start, 1)
+
+
 @router.get(
     "/health",
     summary="Aggregated System Health Check",
     status_code=status.HTTP_200_OK,
 )
 async def health_check(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     redis: Optional[Redis] = Depends(get_redis),
 ) -> Dict[str, Any]:
-    """Returns general service operational status and health metrics."""
+    """Returns service operational status, dependency health, and runtime metrics."""
     db_status = "healthy"
+    db_latency_ms: Optional[float] = None
     try:
+        t0 = time.perf_counter()
         await db.execute(text("SELECT 1"))
+        db_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
     except Exception:
         db_status = "unhealthy"
 
     redis_status = "healthy"
+    redis_latency_ms: Optional[float] = None
     if redis is not None:
         try:
+            t0 = time.perf_counter()
             await redis.ping()
+            redis_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
         except Exception:
             redis_status = "unhealthy"
     else:
         redis_status = "disconnected"
 
-    is_healthy = db_status == "healthy" and redis_status in ["healthy", "disconnected"]
+    is_healthy = db_status == "healthy" and redis_status in ("healthy", "disconnected")
 
     return {
         "status": "healthy" if is_healthy else "degraded",
         "service": settings.APP_NAME,
+        "version": "1.0.0",
         "environment": settings.APP_ENV,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": _uptime_seconds(request),
         "dependencies": {
-            "database": db_status,
-            "redis": redis_status,
+            "database": {
+                "status": db_status,
+                "latency_ms": db_latency_ms,
+            },
+            "redis": {
+                "status": redis_status,
+                "latency_ms": redis_latency_ms,
+            },
         },
     }
 
@@ -58,8 +80,11 @@ async def health_check(
     status_code=status.HTTP_200_OK,
 )
 async def liveness_probe() -> Dict[str, str]:
-    """Kubernetes / Docker Liveness probe confirming service process is running."""
-    return {"status": "live", "timestamp": datetime.now(timezone.utc).isoformat()}
+    """Kubernetes / Docker liveness probe — confirms the process is running."""
+    return {
+        "status": "live",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get(
@@ -71,27 +96,25 @@ async def readiness_probe(
     db: AsyncSession = Depends(get_db),
     redis: Optional[Redis] = Depends(get_redis),
 ) -> JSONResponse:
-    """Kubernetes / Docker Readiness probe confirming database and cache connectivity."""
-    errors = []
+    """Kubernetes / Docker readiness probe — confirms all dependencies are reachable."""
+    errors: list[str] = []
 
-    # Test Database
     try:
         await db.execute(text("SELECT 1"))
-    except Exception as e:
-        errors.append(f"Database connection failed: {str(e)}")
+    except Exception as exc:
+        errors.append(f"Database connection failed: {exc}")
 
-    # Test Redis
     if redis is not None:
         try:
             await redis.ping()
-        except Exception as e:
-            errors.append(f"Redis connection failed: {str(e)}")
+        except Exception as exc:
+            errors.append(f"Redis connection failed: {exc}")
     else:
         errors.append("Redis client uninitialized")
 
     if errors:
         return JSONResponse(
-            status_code=status.HTTP_531_SERVICE_UNAVAILABLE if hasattr(status, "HTTP_531") else 503,
+            status_code=503,
             content={
                 "status": "not_ready",
                 "timestamp": datetime.now(timezone.utc).isoformat(),

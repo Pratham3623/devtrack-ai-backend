@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional
 from sqlalchemy import Column, ForeignKey, String, Table, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from app.db.types import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BaseModel, Base
@@ -10,8 +10,8 @@ from app.db.base import BaseModel, Base
 issue_labels = Table(
     "issue_labels",
     Base.metadata,
-    Column("issue_id", UUID(as_uuid=True), ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True),
-    Column("label_id", UUID(as_uuid=True), ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True),
+    Column("issue_id", UUID(), ForeignKey("issues.id", ondelete="CASCADE"), primary_key=True),
+    Column("label_id", UUID(), ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True),
 )
 
 
@@ -24,7 +24,7 @@ class Label(BaseModel):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#6366f1")  # Hex color string

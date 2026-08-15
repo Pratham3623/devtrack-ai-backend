@@ -39,6 +39,7 @@ const state = {
 /* ── Helpers ────────────────────────────────────────────── */
 const qs = (sel, ctx = document) => ctx.querySelector(sel);
 const qsa = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+const on = (sel, evt, fn) => { const el = qs(sel); if (el) el.addEventListener(evt, fn); };
 
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
@@ -56,7 +57,14 @@ function debounce(fn, ms = 350) {
 async function apiFetch(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
-  const res = await fetch(`${API}${path}`, { ...opts, headers });
+  let res = await fetch(`${API}${path}`, { ...opts, headers });
+  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/register') {
+    await quickLogin();
+    if (state.token) {
+      headers['Authorization'] = `Bearer ${state.token}`;
+      res = await fetch(`${API}${path}`, { ...opts, headers });
+    }
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${res.status}`);
@@ -136,21 +144,23 @@ async function loadOrganizations() {
   try {
     const orgs = await apiFetch('/organizations');
     const sel = qs('#org-select');
-    sel.innerHTML = '<option value="">Select Organization…</option>';
+    if (sel) sel.innerHTML = '<option value="">Select Organization…</option>';
     if (orgs && orgs.length) {
       orgs.forEach(org => {
         const opt = document.createElement('option');
         opt.value = org.id;
         opt.textContent = org.name;
         if (org.id === state.orgId) opt.selected = true;
-        sel.appendChild(opt);
+        if (sel) sel.appendChild(opt);
       });
-      if (!state.orgId) {
+      if (!state.orgId || !orgs.some(o => o.id === state.orgId)) {
         state.orgId = orgs[0].id;
-        sel.value = state.orgId;
+        if (sel) sel.value = state.orgId;
         localStorage.setItem('dt_org_id', state.orgId);
       }
-      qs('#btn-new-project').disabled = false;
+      if (qs('#btn-new-project')) qs('#btn-new-project').disabled = false;
+    } else {
+      await createDefaultOrg();
     }
   } catch (e) {
     console.warn('loadOrganizations:', e.message);
@@ -576,25 +586,101 @@ function populateAnalyticsSelect() {
 async function loadAnalytics(projectId) {
   qs('#analytics-select-prompt').style.display = 'none';
   qs('#analytics-content').style.display = 'block';
-  qs('#velocity-chart').innerHTML = '<div class="skeleton-loader" style="height:100%;min-height:90px"></div>';
-  qs('#workload-bars').innerHTML = '';
-  qs('#donut-legend').innerHTML = '';
-  qs('#created-vs-resolved').innerHTML = '';
+  if (qs('#velocity-chart')) qs('#velocity-chart').innerHTML = '<div class="skeleton-loader" style="height:100%;min-height:90px"></div>';
+  if (qs('#productivity-tbody')) qs('#productivity-tbody').innerHTML = '';
+  if (qs('#created-vs-resolved')) qs('#created-vs-resolved').innerHTML = '';
 
   try {
     const data = await apiFetch(`/organizations/${state.orgId}/projects/${projectId}/analytics`);
+    
+    // Update Executive KPIs
+    if (qs('#kpi-velocity-val')) {
+      const lastVelocity = data.velocity_trend && data.velocity_trend.length ? data.velocity_trend[data.velocity_trend.length - 1].completed : 0;
+      qs('#kpi-velocity-val').textContent = `${lastVelocity} pts`;
+    }
+    if (qs('#kpi-completion-val')) {
+      const res = data.created_vs_resolved || {};
+      const rate = res.created ? Math.round((res.resolved / res.created) * 100) : 100;
+      qs('#kpi-completion-val').textContent = `${rate}%`;
+    }
+    if (qs('#kpi-bugs-val')) {
+      const bugs = (data.issue_statistics && data.issue_statistics.priority_distribution) ? data.issue_statistics.priority_distribution.URGENT || 0 : 0;
+      qs('#kpi-bugs-val').textContent = `${bugs} Open`;
+    }
+
+    renderHealthGauge(data.project_health_breakdown);
+    renderBurndownChart(data.burndown_chart);
     renderVelocityChart(data.velocity_trend);
-    renderStatusDonut(data.issue_status_distribution);
-    renderWorkloadBars(data.member_workload);
+    renderProductivityTable(data.productivity_metrics);
+    renderActivityGraph(data.activity_graph);
+    renderIssueStatistics(data.issue_statistics);
     renderCreatedVsResolved(data.created_vs_resolved);
   } catch (e) {
     toast(`Analytics error: ${e.message}`, 'error');
   }
 }
 
+function renderHealthGauge(health) {
+  if (!health) return;
+  const valEl = qs('#health-score-val');
+  const badgeEl = qs('#health-status-badge');
+  const summaryEl = qs('#health-summary-text');
+  const arcEl = qs('#health-gauge-arc');
+
+  const score = health.overall_score || 0;
+  if (valEl) valEl.textContent = `${score}%`;
+  if (badgeEl) badgeEl.textContent = health.health_status || 'HEALTHY';
+  if (summaryEl) summaryEl.textContent = `Completion Rate: ${health.completion_rate_score || 0}% | Bug Penalty: -${health.bug_penalty || 0} pts`;
+
+  if (arcEl) {
+    const circumference = 264;
+    const offset = circumference - (score / 100) * circumference;
+    arcEl.style.strokeDashoffset = offset;
+  }
+}
+
+function renderBurndownChart(chartData) {
+  const container = qs('#burndown-chart');
+  if (!container || !chartData || !chartData.length) return;
+
+  const width = 600;
+  const height = 200;
+  const padding = 25;
+  const maxPts = Math.max(...chartData.map(d => Math.max(d.ideal_remaining, d.actual_remaining)), 1);
+
+  const pointsCount = chartData.length;
+  const stepX = (width - padding * 2) / (pointsCount - 1);
+
+  const idealCoords = chartData.map((d, i) => {
+    const x = padding + i * stepX;
+    const y = height - padding - (d.ideal_remaining / maxPts) * (height - padding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+
+  const actualCoords = chartData.map((d, i) => {
+    const x = padding + i * stepX;
+    const y = height - padding - (d.actual_remaining / maxPts) * (height - padding * 2);
+    return `${x},${y}`;
+  }).join(' ');
+
+  const svgHTML = `
+    <svg class="burndown-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+      <polyline points="${idealCoords}" class="path-ideal" />
+      <polyline points="${actualCoords}" class="path-actual" />
+      ${chartData.map((d, i) => {
+        const x = padding + i * stepX;
+        const yActual = height - padding - (d.actual_remaining / maxPts) * (height - padding * 2);
+        return `<circle cx="${x}" cy="${yActual}" r="4" fill="var(--accent-purple)"><title>${d.day}: ${d.actual_remaining} pts remaining</title></circle>`;
+      }).join('')}
+    </svg>`;
+
+  container.innerHTML = svgHTML;
+}
+
 function renderVelocityChart(trend) {
-  const maxVal = Math.max(...trend.flatMap(s => [s.completed, s.committed]), 1);
   const chartEl = qs('#velocity-chart');
+  if (!chartEl || !trend) return;
+  const maxVal = Math.max(...trend.flatMap(s => [s.completed, s.committed]), 1);
   chartEl.innerHTML = trend.map(s => {
     const compH = Math.round((s.completed / maxVal) * 80);
     const commH = Math.round((s.committed / maxVal) * 80);
@@ -609,72 +695,67 @@ function renderVelocityChart(trend) {
   }).join('');
 }
 
-const DONUT_COLORS = [
-  'hsl(261,80%,68%)',
-  'hsl(214,90%,64%)',
-  'hsl(152,76%,55%)',
-  'hsl(38,95%,60%)',
-  'hsl(186,90%,56%)',
-  'hsl(0,80%,62%)',
-];
-
-function renderStatusDonut(dist) {
-  const canvas = qs('#status-donut');
-  const ctx = canvas.getContext('2d');
-  const entries = Object.entries(dist);
-  const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
-  let start = -Math.PI / 2;
-  const cx = 90, cy = 90, r = 70, innerR = 42;
-
-  ctx.clearRect(0, 0, 180, 180);
-  entries.forEach(([key, val], i) => {
-    const angle = (val / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, start, start + angle);
-    ctx.closePath();
-    ctx.fillStyle = DONUT_COLORS[i % DONUT_COLORS.length];
-    ctx.fill();
-    start += angle;
-  });
-
-  // Inner hole
-  ctx.beginPath();
-  ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
-  ctx.fillStyle = 'hsl(222,24%,11%)';
-  ctx.fill();
-
-  // Center text
-  ctx.fillStyle = 'hsl(220,20%,95%)';
-  ctx.font = 'bold 22px Inter, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(total, cx, cy);
-
-  // Legend
-  const legend = qs('#donut-legend');
-  legend.innerHTML = entries.map(([key, val], i) => `
-    <div class="legend-item">
-      <div class="legend-dot" style="background:${DONUT_COLORS[i % DONUT_COLORS.length]}"></div>
-      <span>${escHtml(key)}: <strong>${val}</strong></span>
-    </div>`).join('');
+function renderProductivityTable(productivity) {
+  const tbody = qs('#productivity-tbody');
+  if (!tbody) return;
+  if (!productivity || !productivity.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No team activity data yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = productivity.map(p => `
+    <tr>
+      <td style="font-weight:600">${escHtml(p.user_name)}</td>
+      <td>${p.issues_assigned}</td>
+      <td><span style="color:var(--accent-green);font-weight:700">${p.issues_completed}</span></td>
+      <td>${p.story_points_completed || 0} pts</td>
+      <td><span class="eff-badge">${p.efficiency_score}%</span></td>
+    </tr>
+  `).join('');
 }
 
-function renderWorkloadBars(workload) {
-  const el = qs('#workload-bars');
-  const max = Math.max(...workload.map(w => w.assigned_issues), 1);
-  el.innerHTML = workload.map(w => `
-    <div class="workload-bar-row">
-      <span class="workload-name">${escHtml(w.user_name)}</span>
-      <div class="workload-bar-track">
-        <div class="workload-bar-fill" style="width:${Math.round((w.assigned_issues / max) * 100)}%"></div>
-      </div>
-      <span class="workload-count">${w.assigned_issues}</span>
-    </div>`).join('');
+function renderActivityGraph(activities) {
+  const container = qs('#activity-graph');
+  if (!container || !activities || !activities.length) return;
+
+  const maxVal = Math.max(...activities.map(a => a.activity_count), 1);
+  container.innerHTML = activities.map(a => {
+    const hPct = Math.max(8, Math.round((a.activity_count / maxVal) * 100));
+    return `
+      <div class="act-col" title="${a.date}: ${a.activity_count} actions (${a.issues_created} created, ${a.issues_resolved} resolved)">
+        <div class="act-bar" style="height:${hPct}%"></div>
+        <span class="act-lbl">${escHtml(a.date)}</span>
+      </div>`;
+  }).join('');
+}
+
+function renderIssueStatistics(stats) {
+  const container = qs('#issue-stats-breakdown');
+  if (!container || !stats) return;
+
+  const priorities = stats.priority_distribution || {};
+  const total = stats.total_issues || 1;
+
+  container.innerHTML = Object.entries(priorities).map(([pri, cnt]) => {
+    const pct = Math.round((cnt / total) * 100);
+    const colorMap = { URGENT: 'var(--accent-red)', HIGH: 'var(--accent-amber)', MEDIUM: 'var(--accent-blue)', LOW: 'var(--text-muted)' };
+    const color = colorMap[pri] || 'var(--accent-purple)';
+    return `
+      <div class="stat-row-item">
+        <div class="stat-row-head">
+          <span style="font-weight:600">${pri}</span>
+          <span>${cnt} issues (${pct}%)</span>
+        </div>
+        <div class="stat-row-bar-bg">
+          <div class="stat-row-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderCreatedVsResolved(data) {
-  qs('#created-vs-resolved').innerHTML = `
+  const container = qs('#created-vs-resolved');
+  if (!container || !data) return;
+  container.innerHTML = `
     <div class="metric-circle">
       <div class="num created-num">${data.created}</div>
       <div class="lbl">Created</div>
@@ -685,6 +766,7 @@ function renderCreatedVsResolved(data) {
       <div class="lbl">Resolved</div>
     </div>`;
 }
+
 
 /* ── Kanban Board Module ──────────────────────────────────── */
 
@@ -1167,6 +1249,7 @@ function renderActivityTimeline(items, issueId) {
       }
     })
     .join('');
+}
 
 /* ── Labels Module (Phase 6G) ─────────────────────────────── */
 async function loadProjectLabels(projectId) {
@@ -1273,6 +1356,7 @@ function renderIssueLabels(assignedLabels, issueId) {
       }
     };
   });
+}
 
 /* ── Subtasks & Dependencies Module (Phase 6H) ───────────── */
 async function loadIssueSubtasks(issueId) {
@@ -1464,12 +1548,19 @@ function switchView(name) {
   qsa('.view').forEach(v => v.classList.remove('active'));
   qs(`#view-${name}`).classList.add('active');
 
-  const labels = { projects: 'Projects', board: 'Kanban Board', templates: 'Templates', analytics: 'Analytics', archived: 'Archived' };
+  const labels = { projects: 'Projects', board: 'Kanban Board', templates: 'Templates', analytics: 'Analytics', files: 'Files & Storage', archived: 'Archived' };
   qs('#breadcrumb').textContent = labels[name] || name;
 
   if (name === 'archived') fetchProjects(true);
   if (name === 'analytics') {
     if (!state.projects.length && state.orgId) fetchProjects();
+  }
+  if (name === 'files') {
+    if (!state.projects.length && state.orgId) {
+      fetchProjects().then(() => loadFilesView());
+    } else {
+      loadFilesView();
+    }
   }
   if (name === 'board') {
     if (!state.projects.length && state.orgId) {
@@ -1479,6 +1570,7 @@ function switchView(name) {
     }
   }
 }
+
 
 /* ── Settings Save ──────────────────────────────────────── */
 async function saveProjectSettings(e) {
@@ -1509,38 +1601,38 @@ function wireEvents() {
   });
 
   // Org selector
-  qs('#org-select').addEventListener('change', async (e) => {
+  on('#org-select', 'change', async (e) => {
     state.orgId = e.target.value || null;
     localStorage.setItem('dt_org_id', state.orgId || '');
-    qs('#btn-new-project').disabled = !state.orgId;
+    if (qs('#btn-new-project')) qs('#btn-new-project').disabled = !state.orgId;
     if (state.orgId) {
       state.page = 1;
       await fetchProjects();
       if (state.activeView === 'board') loadBoardView();
     } else {
-      qs('#project-grid').innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><h3>Select an organization</h3></div>';
+      if (qs('#project-grid')) qs('#project-grid').innerHTML = '<div class="empty-state"><div class="empty-icon">◈</div><h3>Select an organization</h3></div>';
     }
   });
 
   // New Project
-  qs('#btn-new-project').addEventListener('click', () => {
+  on('#btn-new-project', 'click', () => {
     if (!state.orgId) { toast('Select an organization first.', 'error'); return; }
     openCreateModal();
   });
 
   // Modal close
-  qs('#btn-close-modal').addEventListener('click', closeCreateModal);
-  qs('#btn-cancel-modal').addEventListener('click', closeCreateModal);
-  qs('#create-modal-overlay').addEventListener('click', (e) => {
+  on('#btn-close-modal', 'click', closeCreateModal);
+  on('#btn-cancel-modal', 'click', closeCreateModal);
+  on('#create-modal-overlay', 'click', (e) => {
     if (e.target === qs('#create-modal-overlay')) closeCreateModal();
   });
 
   // Create project form
-  qs('#create-project-form').addEventListener('submit', handleCreateProject);
+  on('#create-project-form', 'submit', handleCreateProject);
 
   // Drawer
-  qs('#drawer-overlay').addEventListener('click', closeDrawer);
-  qs('#btn-close-drawer').addEventListener('click', closeDrawer);
+  on('#drawer-overlay', 'click', closeDrawer);
+  on('#btn-close-drawer', 'click', closeDrawer);
 
   // Drawer tabs
   qsa('.drawer-tab').forEach(tab => {
@@ -1553,10 +1645,10 @@ function wireEvents() {
   });
 
   // Settings form
-  qs('#project-settings-form').addEventListener('submit', saveProjectSettings);
+  on('#project-settings-form', 'submit', saveProjectSettings);
 
   // Search
-  qs('#search-input').addEventListener('input', debounce(async (e) => {
+  on('#search-input', 'input', debounce(async (e) => {
     state.query = e.target.value.trim();
     state.page = 1;
     await fetchProjects();
@@ -1574,119 +1666,182 @@ function wireEvents() {
   });
 
   // Pagination
-  qs('#btn-prev').addEventListener('click', async () => {
+  on('#btn-prev', 'click', async () => {
     if (state.page > 1) { state.page--; await fetchProjects(); }
   });
-  qs('#btn-next').addEventListener('click', async () => {
+  on('#btn-next', 'click', async () => {
     if (state.page < state.pages) { state.page++; await fetchProjects(); }
   });
 
   // Analytics project select
-  qs('#analytics-project-select').addEventListener('change', (e) => {
+  on('#analytics-project-select', 'change', (e) => {
     if (e.target.value) loadAnalytics(e.target.value);
     else {
-      qs('#analytics-select-prompt').style.display = 'flex';
-      qs('#analytics-content').style.display = 'none';
+      if (qs('#analytics-select-prompt')) qs('#analytics-select-prompt').style.display = 'flex';
+      if (qs('#analytics-content')) qs('#analytics-content').style.display = 'none';
     }
   });
 
   // ── Board Event Wire ──
-  const boardProjSel = qs('#board-project-select');
-  if (boardProjSel) {
-    boardProjSel.addEventListener('change', (e) => {
-      if (e.target.value) loadBoardView(e.target.value);
-    });
-  }
+  on('#board-project-select', 'change', (e) => {
+    if (e.target.value) loadBoardView(e.target.value);
+  });
 
-  const boardSel = qs('#board-select');
-  if (boardSel) {
-    boardSel.addEventListener('change', (e) => {
-      if (e.target.value) loadBoardDetails(e.target.value);
-    });
-  }
+  on('#board-select', 'change', (e) => {
+    if (e.target.value) loadBoardDetails(e.target.value);
+  });
 
-  const btnCreateIssue = qs('#btn-create-issue');
-  if (btnCreateIssue) {
-    btnCreateIssue.addEventListener('click', () => openIssueModal());
-  }
-
-  const btnAddCol = qs('#btn-add-column');
-  if (btnAddCol) {
-    btnAddCol.addEventListener('click', () => openColumnModal());
-  }
+  on('#btn-create-issue', 'click', () => openIssueModal());
+  on('#btn-add-column', 'click', () => openColumnModal());
 
   // Issue modal events
-  qs('#btn-close-issue-modal').addEventListener('click', closeIssueModal);
-  qs('#btn-cancel-issue-modal').addEventListener('click', closeIssueModal);
-  qs('#issue-modal-overlay').addEventListener('click', (e) => {
+  on('#btn-close-issue-modal', 'click', closeIssueModal);
+  on('#btn-cancel-issue-modal', 'click', closeIssueModal);
+  on('#issue-modal-overlay', 'click', (e) => {
     if (e.target === qs('#issue-modal-overlay')) closeIssueModal();
   });
-  qs('#issue-form').addEventListener('submit', handleIssueFormSubmit);
-  qs('#btn-archive-issue').addEventListener('click', archiveCurrentEditingIssue);
+  on('#issue-form', 'submit', handleIssueFormSubmit);
+  on('#btn-archive-issue', 'click', archiveCurrentEditingIssue);
 
   // Column modal events
-  qs('#btn-close-column-modal').addEventListener('click', closeColumnModal);
-  qs('#btn-cancel-column-modal').addEventListener('click', closeColumnModal);
-  qs('#column-modal-overlay').addEventListener('click', (e) => {
+  on('#btn-close-column-modal', 'click', closeColumnModal);
+  on('#btn-cancel-column-modal', 'click', closeColumnModal);
+  on('#column-modal-overlay', 'click', (e) => {
     if (e.target === qs('#column-modal-overlay')) closeColumnModal();
   });
-  qs('#column-form').addEventListener('submit', handleColumnFormSubmit);
+  on('#column-form', 'submit', handleColumnFormSubmit);
 
   // Board Filter Events
-  qs('#board-search-input').addEventListener('input', debounce(async (e) => {
+  on('#board-search-input', 'input', debounce(async (e) => {
     state.boardQuery = e.target.value.trim();
     await fetchBoardIssues();
   }, 350));
 
-  qs('#filter-board-priority').addEventListener('change', async (e) => {
+  on('#filter-board-priority', 'change', async (e) => {
     state.boardPriorityFilter = e.target.value;
     await fetchBoardIssues();
   });
 
-  qs('#filter-board-assignee').addEventListener('change', async (e) => {
+  on('#filter-board-assignee', 'change', async (e) => {
     state.boardAssigneeFilter = e.target.value;
     await fetchBoardIssues();
   });
 
   // AI Modal events
-  const btnAIGen = qs('#btn-ai-generate-issues');
-  if (btnAIGen) btnAIGen.addEventListener('click', openAIModal);
+  on('#btn-ai-generate-issues', 'click', openAIModal);
+  on('#btn-ai-sprint-planner', 'click', async () => {
+    if (!state.boardProjectId) return;
+    try {
+      toast('AI Sprint Planner analyzing backlog...', 'info');
+      const plan = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/ai/sprint-plan`, {
+        method: 'POST',
+        body: JSON.stringify({ sprint_name: 'Sprint 1', sprint_goal: 'Deliver Core Features', capacity_issues: 5 }),
+      });
+      alert(`🤖 AI Sprint Plan Strategy:\n\nGoal: ${plan.sprint_goal}\nAllocated: ${plan.capacity_used} issues\n\nRationale:\n${plan.rationale}\n\nRisk Assessment:\n${plan.risk_assessment}`);
+    } catch (err) {
+      toast(`Sprint planning failed: ${err.message}`, 'error');
+    }
+  });
 
-  const btnAISprint = qs('#btn-ai-sprint-planner');
-  if (btnAISprint) {
-    btnAISprint.addEventListener('click', async () => {
-      if (!state.boardProjectId) return;
-      try {
-        toast('AI Sprint Planner analyzing backlog...', 'info');
-        const plan = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/ai/sprint-plan`, {
-          method: 'POST',
-          body: JSON.stringify({ sprint_name: 'Sprint 1', sprint_goal: 'Deliver Core Features', capacity_issues: 5 }),
-        });
-        alert(`🤖 AI Sprint Plan Strategy:\n\nGoal: ${plan.sprint_goal}\nAllocated: ${plan.capacity_used} issues\n\nRationale:\n${plan.rationale}\n\nRisk Assessment:\n${plan.risk_assessment}`);
-      } catch (err) {
-        toast(`Sprint planning failed: ${err.message}`, 'error');
-      }
-    });
-  }
-
-  qs('#btn-close-ai-modal').addEventListener('click', closeAIModal);
-  qs('#btn-cancel-ai-modal').addEventListener('click', closeAIModal);
-  qs('#ai-modal-overlay').addEventListener('click', (e) => {
+  on('#btn-close-ai-modal', 'click', closeAIModal);
+  on('#btn-cancel-ai-modal', 'click', closeAIModal);
+  on('#ai-modal-overlay', 'click', (e) => {
     if (e.target === qs('#ai-modal-overlay')) closeAIModal();
   });
-  qs('#ai-form').addEventListener('submit', handleAIGenerateSubmit);
-  qs('#btn-apply-ai-issues').addEventListener('click', applyAIGeneratedIssues);
+  on('#ai-form', 'submit', handleAIGenerateSubmit);
+  on('#btn-apply-ai-issues', 'click', applyAIGeneratedIssues);
 
-  // Keyboard: Escape to close
+  // Phase 10: Global Search & Saved Searches Wire
+  on('#btn-global-search-trigger', 'click', openSearchModal);
+  on('#btn-close-search-modal', 'click', closeSearchModal);
+  on('#search-modal-overlay', 'click', (e) => {
+    if (e.target === qs('#search-modal-overlay')) closeSearchModal();
+  });
+  on('#cmd-search-input', 'input', debounce(() => executeGlobalSearch(), 300));
+  on('#cmd-filter-priority', 'change', () => executeGlobalSearch());
+  on('#cmd-filter-status', 'change', () => executeGlobalSearch());
+  on('#btn-save-current-search', 'click', saveCurrentSearch);
+
+  // Phase 11: Files & Storage Wire
+  on('#btn-trigger-upload-dialog', 'click', () => qs('#hidden-file-input')?.click());
+  on('#hidden-file-input', 'change', (e) => {
+    if (e.target.files && e.target.files.length) {
+      const projId = qs('#files-project-filter')?.value || null;
+      uploadFiles(e.target.files, projId);
+    }
+  });
+
+  on('#files-project-filter', 'change', () => fetchAndRenderFiles());
+
+  on('#btn-files-view-grid', 'click', () => {
+    currentFilesViewMode = 'grid';
+    qs('#btn-files-view-grid')?.classList.add('active');
+    qs('#btn-files-view-list')?.classList.remove('active');
+    fetchAndRenderFiles();
+  });
+
+  on('#btn-files-view-list', 'click', () => {
+    currentFilesViewMode = 'list';
+    qs('#btn-files-view-list')?.classList.add('active');
+    qs('#btn-files-view-grid')?.classList.remove('active');
+    fetchAndRenderFiles();
+  });
+
+  // Drag and Drop Zone Wire
+  const dropZone = qs('#file-drop-zone');
+  if (dropZone) {
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('dragover');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+      }, false);
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        const projId = qs('#files-project-filter')?.value || null;
+        uploadFiles(dt.files, projId);
+      }
+    });
+
+    on('.browse-link', 'click', () => qs('#hidden-file-input')?.click());
+  }
+
+  // Version History Modal Wire
+  on('#btn-close-version-modal', 'click', closeVersionModal);
+  on('#version-modal-overlay', 'click', (e) => {
+    if (e.target === qs('#version-modal-overlay')) closeVersionModal();
+  });
+  on('#btn-submit-new-version', 'click', submitNewVersion);
+
+  // Keyboard: Escape to close / Ctrl+K to open search
   document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openSearchModal();
+    }
     if (e.key === 'Escape') {
       closeDrawer();
       closeCreateModal();
       closeIssueModal();
       closeColumnModal();
       closeAIModal();
+      closeSearchModal();
+      closeVersionModal();
     }
   });
+
+
 
   // Real-time Comment Typing Listener
   const commentInput = qs('#comment-text-input');
@@ -1864,8 +2019,393 @@ function hideTypingIndicator() {
   if (el) el.style.display = 'none';
 }
 
+/* ── Enterprise Global Search & Saved Searches (Phase 10) ──── */
+function openSearchModal() {
+  if (!state.orgId) { toast('Select an organization first.', 'error'); return; }
+  const overlay = qs('#search-modal-overlay');
+  if (overlay) {
+    overlay.classList.add('active');
+    const input = qs('#cmd-search-input');
+    if (input) {
+      input.value = '';
+      input.focus();
+    }
+    loadSavedSearches();
+    executeGlobalSearch();
+  }
+}
+
+function closeSearchModal() {
+  const overlay = qs('#search-modal-overlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+async function executeGlobalSearch() {
+  if (!state.orgId) return;
+  const q = (qs('#cmd-search-input')?.value || '').trim();
+  const priority = qs('#cmd-filter-priority')?.value || '';
+  const status = qs('#cmd-filter-status')?.value || '';
+  const resultsContainer = qs('#cmd-search-results');
+  const execTimeEl = qs('#cmd-exec-time');
+
+  if (resultsContainer) {
+    resultsContainer.innerHTML = '<div class="skeleton-loader" style="height:60px;margin:1rem"></div>';
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (priority) params.set('priority', priority);
+    if (status) params.set('status', status);
+
+    const data = await apiFetch(`/organizations/${state.orgId}/search?${params.toString()}`);
+    
+    if (execTimeEl) execTimeEl.textContent = `${data.execution_time_ms}ms (${data.total_results} results)`;
+
+    if (!data.items || !data.items.length) {
+      if (resultsContainer) {
+        resultsContainer.innerHTML = `
+          <div class="empty-state" style="padding:2rem 1rem">
+            <div class="empty-icon">⌕</div>
+            <h3>No results found</h3>
+            <p style="font-size:0.82rem">Try adjusting your query or clearing filter criteria.</p>
+          </div>`;
+      }
+      return;
+    }
+
+    if (resultsContainer) {
+      resultsContainer.innerHTML = data.items.map(item => `
+        <div class="cmd-result-item" onclick="handleSearchResultClick('${item.entity_type}', '${item.entity_id}', '${item.url}')">
+          <div class="cmd-result-main">
+            <span class="cmd-result-title">${escHtml(item.title)}</span>
+            <span class="cmd-result-sub">${escHtml(item.subtitle || '')} ${item.snippet ? ('— ' + escHtml(item.snippet)) : ''}</span>
+          </div>
+          <span class="cmd-result-badge badge-entity-${item.entity_type}">${item.entity_type}</span>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    if (resultsContainer) {
+      resultsContainer.innerHTML = `<div class="empty-state" style="padding:1.5rem;color:var(--accent-red)">Search failed: ${err.message}</div>`;
+    }
+  }
+}
+
+function handleSearchResultClick(type, id, url) {
+  closeSearchModal();
+  if (type === 'project') {
+    switchView('projects');
+    openDrawer(id);
+  } else if (type === 'issue') {
+    switchView('board');
+  } else {
+    toast(`Opened ${type} ${id}`, 'info');
+  }
+}
+
+async function loadSavedSearches() {
+  if (!state.orgId) return;
+  const container = qs('#saved-searches-list');
+  if (!container) return;
+  try {
+    const list = await apiFetch(`/organizations/${state.orgId}/saved-searches`);
+    if (!list || !list.length) {
+      container.innerHTML = '<span style="font-size:0.72rem;color:var(--text-muted)">None</span>';
+      return;
+    }
+    container.innerHTML = list.map(s => `
+      <div class="saved-search-chip" title="Apply filter preset '${escHtml(s.name)}'">
+        <span onclick="applySavedSearchPreset('${s.id}')">${escHtml(s.name)}</span>
+        <span class="btn-del-preset" onclick="deleteSavedSearchPreset(event, '${s.id}')">✕</span>
+      </div>
+    `).join('');
+    state.savedSearches = list;
+  } catch (_) {
+    container.innerHTML = '';
+  }
+}
+
+function applySavedSearchPreset(savedId) {
+  const preset = (state.savedSearches || []).find(s => s.id === savedId);
+  if (!preset) return;
+  const p = preset.query_params || {};
+  if (qs('#cmd-search-input')) qs('#cmd-search-input').value = p.q || '';
+  if (qs('#cmd-filter-priority')) qs('#cmd-filter-priority').value = p.priority || '';
+  if (qs('#cmd-filter-status')) qs('#cmd-filter-status').value = p.status || '';
+  executeGlobalSearch();
+}
+
+async function saveCurrentSearch() {
+  if (!state.orgId) return;
+  const q = (qs('#cmd-search-input')?.value || '').trim();
+  const priority = qs('#cmd-filter-priority')?.value || '';
+  const status = qs('#cmd-filter-status')?.value || '';
+
+  const name = prompt('Enter a name for this saved search preset:', q || 'Filter Preset');
+  if (!name) return;
+
+  try {
+    await apiFetch(`/organizations/${state.orgId}/saved-searches`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        query_params: { q, priority, status },
+        is_shared: true,
+      }),
+    });
+    toast('Search preset saved!', 'success');
+    await loadSavedSearches();
+  } catch (err) {
+    toast(`Failed to save search: ${err.message}`, 'error');
+  }
+}
+
+async function deleteSavedSearchPreset(e, savedId) {
+  e.stopPropagation();
+  if (!confirm('Delete this search preset?')) return;
+  try {
+    await apiFetch(`/organizations/${state.orgId}/saved-searches/${savedId}`, { method: 'DELETE' });
+    toast('Search preset deleted.', 'info');
+    await loadSavedSearches();
+  } catch (err) {
+    toast(`Failed to delete preset: ${err.message}`, 'error');
+  }
+}
+
+/* ── Files & Storage Engine (Phase 11) ─────────────────── */
+let currentFilesViewMode = 'grid';
+
+async function loadFilesView() {
+  if (!state.orgId) { toast('Select an organization first.', 'error'); return; }
+  
+  // Populate project filter dropdown
+  const projSelect = qs('#files-project-filter');
+  if (projSelect) {
+    projSelect.innerHTML = '<option value="">All Projects</option>' + 
+      (state.projects || []).map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+  }
+
+  await fetchAndRenderFiles();
+}
+
+async function fetchAndRenderFiles() {
+  if (!state.orgId) return;
+  const projId = qs('#files-project-filter')?.value || '';
+  const container = qs('#files-container');
+  const countEl = qs('#files-count');
+  
+  if (container) container.innerHTML = '<div class="skeleton-loader" style="height:120px;grid-column:1/-1"></div>';
+
+  try {
+    const url = projId 
+      ? `/organizations/${state.orgId}/projects/${projId}/files` 
+      : `/organizations/${state.orgId}/files`;
+    const data = await apiFetch(url);
+
+    if (countEl) countEl.textContent = data.total || 0;
+
+    if (!data.items || !data.items.length) {
+      if (container) {
+        container.innerHTML = `
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="empty-icon">📁</div>
+            <h3>No files uploaded yet</h3>
+            <p>Drag & drop files above or click Upload File to attach files to your workspace.</p>
+          </div>`;
+      }
+      return;
+    }
+
+    if (container) {
+      container.className = `files-grid ${currentFilesViewMode === 'list' ? 'list-mode' : ''}`;
+      container.innerHTML = data.items.map(f => fileCardHTML(f)).join('');
+    }
+  } catch (err) {
+    if (container) container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;color:var(--accent-red)">Error loading files: ${err.message}</div>`;
+  }
+}
+
+function fileCardHTML(f) {
+  const sizeMB = (f.size_bytes / (1024 * 1024)).toFixed(2);
+  const dateStr = new Date(f.created_at).toLocaleDateString();
+
+  const previewHTML = f.is_image && f.download_url
+    ? `<img src="${f.download_url}" alt="${escHtml(f.original_filename)}" loading="lazy" />`
+    : `<span style="font-size:2rem;color:var(--accent-purple)">${getFileIcon(f.content_type)}</span>`;
+
+  return `
+    <div class="file-card" id="fcard-${f.id}">
+      <div class="file-card-preview">${previewHTML}</div>
+      <div class="file-card-body">
+        <span class="file-name" title="${escHtml(f.original_filename)}">${escHtml(f.original_filename)}</span>
+        <div class="file-meta">
+          <span>${sizeMB} MB • v${f.current_version}</span>
+          <span>${dateStr}</span>
+        </div>
+        <div class="file-card-actions">
+          <a href="/api/v1/organizations/${state.orgId}/files/${f.id}/download" target="_blank" class="btn-xs btn-ghost" title="Download">⬇ Download</a>
+          <button class="btn-xs btn-ghost" onclick="openVersionModal('${f.id}', '${escHtml(f.original_filename)}', ${f.current_version})" title="Version History">📄 History</button>
+          <button class="btn-xs btn-ghost btn-danger" onclick="deleteFileRecord('${f.id}')" title="Delete">✕</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function getFileIcon(mime) {
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime.includes('pdf')) return '📕';
+  if (mime.includes('zip') || mime.includes('tar') || mime.includes('gzip')) return '📦';
+  if (mime.includes('json') || mime.includes('xml') || mime.includes('javascript') || mime.includes('csv')) return '📜';
+  return '📄';
+}
+
+async function uploadFiles(files, projectId = null, issueId = null) {
+  if (!state.orgId || !files || !files.length) return;
+  const progressBar = qs('#upload-progress-bar');
+  const progressFill = qs('#upload-progress-fill');
+
+  if (progressBar) progressBar.style.display = 'block';
+  if (progressFill) progressFill.style.width = '20%';
+
+  let uploadedCount = 0;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      let endpoint = `/organizations/${state.orgId}/files/upload`;
+      if (projectId && issueId) {
+        endpoint = `/organizations/${state.orgId}/projects/${projectId}/issues/${issueId}/files/upload`;
+      } else if (projectId) {
+        endpoint = `/organizations/${state.orgId}/projects/${projectId}/files/upload`;
+      }
+
+      const res = await fetch(`${API}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${state.token}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.message || 'Upload failed');
+      }
+      uploadedCount++;
+      if (progressFill) progressFill.style.width = `${Math.round(((i + 1) / files.length) * 100)}%`;
+    } catch (err) {
+      toast(`Failed to upload ${file.name}: ${err.message}`, 'error');
+    }
+  }
+
+  if (progressBar) setTimeout(() => { progressBar.style.display = 'none'; }, 1000);
+
+  if (uploadedCount > 0) {
+    toast(`Successfully uploaded ${uploadedCount} file(s).`, 'success');
+    if (state.activeView === 'files') fetchAndRenderFiles();
+  }
+}
+
+async function deleteFileRecord(fileId) {
+  if (!confirm('Are you sure you want to archive this file?')) return;
+  try {
+    await apiFetch(`/organizations/${state.orgId}/files/${fileId}`, { method: 'DELETE' });
+    toast('File archived.', 'info');
+    await fetchAndRenderFiles();
+  } catch (err) {
+    toast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+let currentModalFileId = null;
+async function openVersionModal(fileId, filename, currentV) {
+  currentModalFileId = fileId;
+  const overlay = qs('#version-modal-overlay');
+  if (qs('#version-modal-filename')) qs('#version-modal-filename').textContent = filename;
+  if (qs('#version-modal-current-v')) qs('#version-modal-current-v').textContent = `Current Version: v${currentV}`;
+  if (qs('#version-file-input')) qs('#version-file-input').value = '';
+  if (qs('#version-changelog-input')) qs('#version-changelog-input').value = '';
+
+  if (overlay) overlay.classList.add('active');
+  await loadVersionHistory(fileId);
+}
+
+function closeVersionModal() {
+  const overlay = qs('#version-modal-overlay');
+  if (overlay) overlay.classList.remove('active');
+  currentModalFileId = null;
+}
+
+async function loadVersionHistory(fileId) {
+  const container = qs('#version-history-timeline');
+  if (!container) return;
+  container.innerHTML = '<div class="skeleton-loader" style="height:60px"></div>';
+
+  try {
+    const versions = await apiFetch(`/organizations/${state.orgId}/files/${fileId}/versions`);
+    if (!versions || !versions.length) {
+      container.innerHTML = '<span style="font-size:0.8rem;color:var(--text-muted)">No revision history available.</span>';
+      return;
+    }
+
+    container.innerHTML = versions.map(v => `
+      <div class="version-item">
+        <div>
+          <span class="version-badge">v${v.version_number}</span>
+          <span style="font-size:0.8rem;font-weight:600;margin-left:0.5rem">${escHtml(v.changelog || 'No notes')}</span>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.15rem">
+            ${(v.size_bytes / (1024 * 1024)).toFixed(2)} MB • ${new Date(v.created_at).toLocaleString()}
+          </div>
+        </div>
+        <a href="${v.download_url}" target="_blank" class="btn-xs btn-ghost" title="Download version">⬇ Download</a>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = `<span style="font-size:0.8rem;color:var(--accent-red)">Error: ${err.message}</span>`;
+  }
+}
+
+async function submitNewVersion() {
+  if (!currentModalFileId || !state.orgId) return;
+  const fileInput = qs('#version-file-input');
+  const changelogInput = qs('#version-changelog-input');
+
+  if (!fileInput || !fileInput.files || !fileInput.files.length) {
+    toast('Please select a file to upload as new version.', 'error');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const changelog = changelogInput?.value.trim() || '';
+
+  const formData = new FormData();
+  formData.append('file', file);
+  if (changelog) formData.append('changelog', changelog);
+
+  try {
+    const res = await fetch(`${API}/organizations/${state.orgId}/files/${currentModalFileId}/versions`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${state.token}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || errData.message || 'Version upload failed');
+    }
+
+    toast('New version uploaded successfully!', 'success');
+    await loadVersionHistory(currentModalFileId);
+    await fetchAndRenderFiles();
+  } catch (err) {
+    toast(`Version upload failed: ${err.message}`, 'error');
+  }
+}
+
 /* ── Init ───────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
   wireEvents();
   await bootstrap();
 });
+

@@ -1,0 +1,41 @@
+groups:
+  - name: devtrack-api
+    interval: 30s
+    rules:
+      # Service is down
+      - alert: DevTrackAPIDown
+        expr: up{job="devtrack-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DevTrack API is DOWN"
+          description: "The DevTrack API has been unreachable for more than 1 minute."
+
+      # High 5xx error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="devtrack-api", status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="devtrack-api"}[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate ({{ $value | humanizePercentage }})"
+          description: "More than 5% of requests are returning 5xx errors."
+
+      # High latency P95 > 2s
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="devtrack-api"}[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P95 request latency ({{ $value }}s)"
+          description: "P95 response latency exceeds 2 seconds."

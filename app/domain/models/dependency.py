@@ -1,7 +1,7 @@
 import uuid
 from enum import Enum
 from sqlalchemy import Enum as SQLEnum, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from app.db.types import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BaseModel
@@ -22,10 +22,10 @@ class IssueDependency(BaseModel):
     )
 
     issue_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(), ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True
     )
     target_issue_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(), ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True
     )
     dependency_type: Mapped[DependencyType] = mapped_column(
         SQLEnum(DependencyType, name="dependency_type_enum", create_type=True),

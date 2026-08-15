@@ -1,5 +1,7 @@
 import os
+import time
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,23 +18,52 @@ from app.core.handlers import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
-from app.core.logging import logger, setup_logging
-from app.core.middleware import SecurityHeadersMiddleware
+from app.core.logging import configure_logging, get_logger
+from app.core.middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
 from app.core.redis import close_redis, init_redis
+
+# ── Boot-time: configure structured logging ──────────────────
+configure_logging()
+logger = get_logger(__name__)
+
+# Track application start time for uptime reporting
+_APP_START_TIME = time.time()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup Lifespan
-    setup_logging()
-    logger.info(f"Starting {settings.APP_NAME} in [{settings.APP_ENV}] mode...")
-    await init_redis()
+async def lifespan(app_instance: FastAPI):
+    # ── Startup ───────────────────────────────────────────────
+    logger.info(
+        "application.starting",
+        name=settings.APP_NAME,
+        env=settings.APP_ENV,
+        version="1.0.0",
+    )
+
+    # Auto-create database tables
+    import app.domain.models  # noqa: F401 — ensures all ORM models registered
+    from app.db.base import Base
+    from app.db.session import engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("database.tables_ready")
+
+    # Redis (optional in local dev)
+    try:
+        await init_redis()
+        logger.info("redis.connected")
+    except Exception as exc:
+        logger.warning("redis.unavailable", error=str(exc))
 
     yield
 
-    # Shutdown Lifespan
-    logger.info(f"Shutting down {settings.APP_NAME}...")
-    await close_redis()
+    # ── Shutdown ──────────────────────────────────────────────
+    logger.info("application.stopping", name=settings.APP_NAME)
+    try:
+        await close_redis()
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -45,10 +76,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Set Security Headers Middleware
-app.add_middleware(SecurityHeadersMiddleware)
+app.state.start_time = _APP_START_TIME
 
-# Set CORS middleware
+# ── Mount Prometheus instrumentation ─────────────────────
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/metrics", "/api/v1/health/live", "/api/v1/health/ready"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+    logger.info("prometheus.instrumented", endpoint="/metrics")
+except ImportError:
+    logger.warning("prometheus.not_installed", hint="pip install prometheus-fastapi-instrumentator")
+
+# ── Middleware stack (LIFO — last added = outermost) ─────────
+app.add_middleware(RequestLoggingMiddleware)   # 1. Request ID + structured logging
+app.add_middleware(SecurityHeadersMiddleware)  # 2. Security headers
+
+# CORS
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -58,16 +105,16 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 
-# Register Global Exception Handlers
+# ── Global Exception Handlers ─────────────────────────────────
 app.add_exception_handler(BaseAppException, app_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(SQLAlchemyError, db_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
-# Include API Routers
+# ── API Routers ───────────────────────────────────────────────
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-# Mount Static Frontend SPA
+# ── Static Frontend SPA ───────────────────────────────────────
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_STATIC_DIR):
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
@@ -80,6 +127,7 @@ async def root():
         "version": "1.0.0",
         "documentation": "/docs",
         "health": f"{settings.API_V1_STR}/health",
+        "metrics": "/metrics",
         "ui": "/ui",
     }
 

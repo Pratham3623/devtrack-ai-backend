@@ -96,3 +96,9 @@ class ProjectAnalyticsResponse(BaseModel):
     issue_status_distribution: Dict[str, int]
     member_workload: List[Dict[str, Any]]
     created_vs_resolved: Dict[str, int]
+    burndown_chart: List[Dict[str, Any]] = Field(default_factory=list)
+    productivity_metrics: List[Dict[str, Any]] = Field(default_factory=list)
+    activity_graph: List[Dict[str, Any]] = Field(default_factory=list)
+    issue_statistics: Dict[str, Any] = Field(default_factory=dict)
+    project_health_breakdown: Dict[str, Any] = Field(default_factory=dict)
+

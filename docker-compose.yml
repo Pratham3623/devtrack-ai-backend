@@ -1,37 +1,59 @@
-version: '3.8'
+# ─── Shared environment snippet ──────────────────────────────
+x-api-env: &api-env
+  APP_NAME: DevTrack AI Engine
+  APP_ENV: development
+  DEBUG: "true"
+  SECRET_KEY: dev-secret-key-change-in-production
+  POSTGRES_SERVER: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: devtrack
+  POSTGRES_PASSWORD: devtrack_pass
+  POSTGRES_DB: devtrack_db
+  DATABASE_URL: "postgresql+asyncpg://devtrack:devtrack_pass@db:5432/devtrack_db"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  USE_SQLITE: "false"
+  LOCAL_UPLOAD_DIR: /app/uploads
+  USE_S3: "false"
+  FILE_SIGNED_URL_SECRET: dev-hmac-secret-change-me
+  PROMETHEUS_ENABLED: "true"
 
 services:
+  # ─── FastAPI Application ─────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runner
     container_name: devtrack_api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - APP_NAME=DevTrack AI Engine
-      - APP_ENV=development
-      - DEBUG=true
-      - POSTGRES_SERVER=db
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=devtrack
-      - POSTGRES_PASSWORD=devtrack_pass
-      - POSTGRES_DB=devtrack_db
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
+      <<: *api-env
     volumes:
       - .:/app
+      - uploads_data:/app/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    labels:
+      - "prometheus.scrape=true"
 
+  # ─── PostgreSQL ───────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: devtrack_postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: devtrack
       POSTGRES_PASSWORD: devtrack_pass
@@ -46,10 +68,12 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── Redis ───────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: devtrack_redis
-    restart: always
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -60,6 +84,62 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── Nginx Reverse Proxy ─────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: devtrack_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/api/v1/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Prometheus ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: devtrack_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - api
+
+  # ─── Grafana ─────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: devtrack_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: devtrack_grafana
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:
+  prometheus_data:
+  grafana_data:

@@ -1,47 +1,22 @@
-# DevTrack AI — Execution Checklist
+# Phase 13 — DevOps Tasks
 
-- [x] **Phase 6E: Kanban Frontend**
-  - [x] Update `index.html` with Kanban Board view & Issue Detail Drawer
-  - [x] Add CSS for Kanban columns, drag-and-drop ghosting, cards, badges
-  - [x] Implement Drag-and-Drop in `app.js` with optimistic updates & rollback
-  - [x] Verify frontend & run test suite
-- [x] **Phase 6F: Comments & Activity**
-  - [x] Create `Comment` model, schemas, repository, service, and API controller
-  - [x] Add Audit/Activity event logging for issue lifecycle
-  - [x] Create Alembic migration `0005_comments_and_activity.py`
-  - [x] Implement Comments & Activity Timeline in frontend
-  - [x] Create `tests/test_comments_api.py` & verify all tests pass
-- [x] **Phase 6G: Labels, Priority & Assignment UX**
-  - [x] Create `Label` and `IssueLabel` models, schemas, repository, service, API
-  - [x] Create Alembic migration `0006_labels_domain.py`
-  - [x] Update frontend with label chips, priority/assignee selectors, and filters
-  - [x] Create `tests/test_labels_api.py` & verify all tests pass
-- [x] **Phase 6H: Subtasks & Dependencies**
-  - [x] Add `parent_id` FK to `Issue` for 1-level subtasks
-  - [x] Create `IssueDependency` model, schemas, repository, service, API
-  - [x] Implement cycle detection algorithm (`BLOCKS` graph) & depth validation
-  - [x] Create Alembic migration `0007_subtasks_and_dependencies.py`
-  - [x] Update frontend with subtask progress bar & dependencies section
-  - [x] Create `tests/test_dependencies_api.py` & verify all tests pass
-- [x] **Phase 6I: Security Audit**
-  - [x] Audit multi-tenant isolation, RBAC permissions, parameter tampering
-  - [x] Create `tests/test_security_audit.py` with comprehensive security regression tests
-  - [x] Fix any security edge cases discovered
-  - [x] Verify full test suite
-- [x] **Phase 6J: Final Integration & Verification**
-  - [x] Complete backend test suite run
-  - [x] Verify static assets & JS syntax
-  - [x] Final verification summary
-- [x] **Phase 7: Real-Time Collaboration**
-  - [x] Implement WebSocket `ConnectionManager` & `RedisPubSubManager`
-  - [x] Implement WebSocket API endpoint `/api/v1/ws/projects/{project_id}`
-  - [x] Integrate real-time event broadcasting in `board_service`, `comment_service`, and `issue_service`
-  - [x] Add presence indicators, typing indicators, live notifications, and real-time board/comment updates in UI
-  - [x] Create `tests/test_websockets_api.py` & verify test suite passes (79/79 passed)
-- [x] **Phase 8: AI Integration**
-  - [x] Add OpenAI configuration settings in `config.py`
-  - [x] Create Pydantic schemas in `app/domain/schemas/ai.py`
-  - [x] Implement reusable `AIService` in `app/services/ai_service.py` with mock fallback & streaming
-  - [x] Create REST & SSE endpoints in `app/api/v1/endpoints/ai.py` & register in router
-  - [x] Update frontend UI with AI Issue Generator, Sprint Planner, Docs Generator, Bug Analyzer & Project Summary
-  - [x] Create `tests/test_ai_service.py` and `tests/test_ai_api.py` & verify test suite passes (90/90 passed)
+- [x] Create implementation plan
+- [x] Harden `Dockerfile` (multi-stage, non-root user, uvloop)
+- [x] Create `.dockerignore`
+- [x] Expand `docker-compose.yml` (FastAPI, Postgres, Redis, Prometheus, Grafana, Nginx)
+- [x] Create `docker-compose.prod.yml` (production override)
+- [x] Create `monitoring/prometheus.yml` & `monitoring/alerts.yml` (Prometheus scrape + alert rules)
+- [x] Create `monitoring/grafana/provisioning/datasources/prometheus.yml`
+- [x] Create `monitoring/grafana/provisioning/dashboards/dashboard.yml` & `devtrack.json`
+- [x] Create `nginx/nginx.conf` (reverse proxy + rate limiting + security headers)
+- [x] Add `prometheus-fastapi-instrumentator` + `structlog` to `requirements.txt`
+- [x] Update `app/core/logging.py` (structured JSON logging with structlog)
+- [x] Update `app/core/middleware.py` (request ID + structured log binding)
+- [x] Update `app/main.py` (mount Prometheus instrumentator + lifespan logging)
+- [x] Update `app/api/v1/endpoints/health.py` (uptime, latency, dependency status)
+- [x] Create `.github/workflows/ci.yml` (lint, test, docker-build)
+- [x] Create `.github/workflows/cd.yml` (staging + production deploy)
+- [ ] Create `.github/workflows/security.yml` (weekly dependency scan)
+- [ ] Create `.env.production` (production env template)
+- [ ] Run `pytest -v` — verify 108/108 tests passing
+- [ ] Update `walkthrough.md`

@@ -42,6 +42,10 @@
           <span class="nav-icon">◎</span>
           <span>Analytics</span>
         </a>
+        <a href="#" class="nav-item" data-view="files" id="nav-files">
+          <span class="nav-icon">📁</span>
+          <span>Files</span>
+        </a>
         <a href="#" class="nav-item" data-view="archived" id="nav-archived">
           <span class="nav-icon">⊛</span>
           <span>Archived</span>
@@ -68,8 +72,12 @@
           <div class="breadcrumb" id="breadcrumb">
             <span>Projects</span>
           </div>
+          <button class="btn btn-ghost btn-sm global-search-trigger" id="btn-global-search-trigger" title="Global Enterprise Search (Ctrl+K)">
+            <span class="search-icon">⌕</span> Search <kbd class="cmd-k">Ctrl+K</kbd>
+          </button>
         </div>
         <div class="topbar-right">
+
           <!-- Real-time Presence Bar -->
           <div class="presence-bar" id="presence-bar" title="Active users in project room">
             <span class="live-pulse" id="live-status-pulse"></span>
@@ -229,38 +237,183 @@
 
         <!-- ═══ ANALYTICS VIEW ═══ -->
         <section class="view" id="view-analytics">
-          <div class="view-header">
-            <h2 class="view-title">Analytics Dashboard</h2>
-            <p class="view-subtitle">Velocity trends, issue distributions, and team workload insights.</p>
+          <div class="view-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <h2 class="view-title">Executive Dashboard & Analytics</h2>
+              <p class="view-subtitle">Real-time productivity, sprint velocity, release burndown, activity graphs, and health metrics.</p>
+            </div>
+            <div class="analytics-toolbar">
+              <select id="analytics-project-select" class="select-input" style="max-width:280px">
+                <option value="">Choose a project…</option>
+              </select>
+            </div>
           </div>
+
           <div id="analytics-select-prompt" class="analytics-prompt">
             <div class="empty-icon">◎</div>
-            <p>Select a project to view its analytics.</p>
-            <select id="analytics-project-select" class="select-input" style="margin-top:1rem;max-width:320px">
-              <option value="">Choose a project…</option>
-            </select>
+            <p>Select a project from the dropdown above to render Executive Analytics.</p>
           </div>
+
           <div id="analytics-content" style="display:none">
-            <div class="analytics-grid">
-              <div class="analytics-card wide">
-                <h3 class="card-label">Sprint Velocity Trend</h3>
-                <div class="velocity-chart" id="velocity-chart"></div>
-              </div>
-              <div class="analytics-card">
-                <h3 class="card-label">Issue Status Distribution</h3>
-                <div class="donut-chart-wrapper">
-                  <canvas id="status-donut" width="180" height="180"></canvas>
-                  <div class="donut-legend" id="donut-legend"></div>
+            <!-- Executive KPI & Health Gauge Row -->
+            <div class="exec-kpi-row" id="exec-kpi-row">
+              <div class="exec-kpi-card health-kpi-card">
+                <div class="health-gauge-container">
+                  <svg class="health-gauge-svg" viewBox="0 0 100 100">
+                    <circle class="gauge-bg" cx="50" cy="50" r="42" />
+                    <circle class="gauge-fill" id="health-gauge-arc" cx="50" cy="50" r="42" stroke-dasharray="264" stroke-dashoffset="50" />
+                  </svg>
+                  <div class="gauge-label">
+                    <span class="gauge-value" id="health-score-val">94%</span>
+                    <span class="gauge-title" id="health-status-badge">EXCELLENT</span>
+                  </div>
+                </div>
+                <div class="health-meta">
+                  <h4>Project Health Index</h4>
+                  <p id="health-summary-text">Optimal completion pace & consistent velocity.</p>
                 </div>
               </div>
-              <div class="analytics-card">
-                <h3 class="card-label">Member Workload</h3>
-                <div id="workload-bars"></div>
+
+              <div class="exec-kpi-card">
+                <span class="kpi-icon">⚡</span>
+                <div class="kpi-body">
+                  <span class="kpi-num" id="kpi-velocity-val">28 pts</span>
+                  <span class="kpi-lbl">Avg Velocity / Sprint</span>
+                </div>
               </div>
+
+              <div class="exec-kpi-card">
+                <span class="kpi-icon">🎯</span>
+                <div class="kpi-body">
+                  <span class="kpi-num" id="kpi-completion-val">78.5%</span>
+                  <span class="kpi-lbl">Completion Rate</span>
+                </div>
+              </div>
+
+              <div class="exec-kpi-card">
+                <span class="kpi-icon">🐞</span>
+                <div class="kpi-body">
+                  <span class="kpi-num" id="kpi-bugs-val">2 Open</span>
+                  <span class="kpi-lbl">Urgent Bugs</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="analytics-grid">
+              <!-- Burndown Chart -->
+              <div class="analytics-card wide">
+                <div class="card-header-flex">
+                  <h3 class="card-label">🔥 Release Burndown Chart</h3>
+                  <div class="chart-legend-row">
+                    <span class="legend-item"><span class="dot dot-ideal"></span> Ideal Burn</span>
+                    <span class="legend-item"><span class="dot dot-actual"></span> Actual Remaining</span>
+                  </div>
+                </div>
+                <div class="chart-container" id="burndown-chart-wrapper">
+                  <div id="burndown-chart" class="svg-chart-box"></div>
+                </div>
+              </div>
+
+              <!-- Velocity Trend Chart -->
+              <div class="analytics-card wide">
+                <div class="card-header-flex">
+                  <h3 class="card-label">📈 Team Sprint Velocity</h3>
+                  <div class="chart-legend-row">
+                    <span class="legend-item"><span class="dot dot-committed"></span> Committed</span>
+                    <span class="legend-item"><span class="dot dot-completed"></span> Completed</span>
+                  </div>
+                </div>
+                <div class="velocity-chart" id="velocity-chart"></div>
+              </div>
+
+              <!-- Team Productivity & Workload -->
+              <div class="analytics-card wide">
+                <h3 class="card-label">👥 Team Member Productivity</h3>
+                <div class="productivity-table-wrapper" id="productivity-table-wrapper">
+                  <table class="data-table" id="productivity-table">
+                    <thead>
+                      <tr>
+                        <th>Team Member</th>
+                        <th>Assigned</th>
+                        <th>Completed</th>
+                        <th>Story Points</th>
+                        <th>Efficiency Score</th>
+                      </tr>
+                    </thead>
+                    <tbody id="productivity-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Activity Timeline Graph -->
               <div class="analytics-card">
-                <h3 class="card-label">Created vs Resolved</h3>
+                <h3 class="card-label">📊 7-Day Activity Timeline</h3>
+                <div id="activity-graph" class="activity-graph-container"></div>
+              </div>
+
+              <!-- Issue Status & Priority Statistics -->
+              <div class="analytics-card">
+                <h3 class="card-label">🏷️ Issue Priority & Status Split</h3>
+                <div id="issue-stats-breakdown" class="stats-breakdown-container"></div>
+              </div>
+
+              <!-- Created vs Resolved -->
+              <div class="analytics-card">
+                <h3 class="card-label">🔄 Created vs Resolved Issues</h3>
                 <div id="created-vs-resolved" class="two-metric-row"></div>
               </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- ═══ FILES & STORAGE VIEW (Phase 11) ═══ -->
+        <section class="view" id="view-files">
+          <div class="view-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <h2 class="view-title">Files & Storage Manager</h2>
+              <p class="view-subtitle">Upload files, view images, manage versions, and secure download links across your organization.</p>
+            </div>
+            <div class="files-toolbar" style="display:flex;gap:0.5rem;align-items:center">
+              <select id="files-project-filter" class="select-input select-xs" style="max-width:200px">
+                <option value="">All Projects</option>
+              </select>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-trigger-upload-dialog">
+                <span>↑ Upload File</span>
+              </button>
+              <input type="file" id="hidden-file-input" style="display:none" multiple />
+            </div>
+          </div>
+
+          <!-- Drag and Drop Upload Zone -->
+          <div class="file-drop-zone" id="file-drop-zone">
+            <div class="drop-zone-content">
+              <span class="drop-icon" style="font-size:2.5rem;color:var(--accent-purple)">☁</span>
+              <div class="drop-zone-text">
+                <strong style="color:var(--text-primary)">Drag and drop files here</strong> or <span class="browse-link" style="color:var(--accent-purple);text-decoration:underline;cursor:pointer">browse files</span>
+              </div>
+              <span class="drop-hint" style="font-size:0.75rem;color:var(--text-muted)">Supports Images, PDFs, Documents, Archives & Code (Max 50MB)</span>
+            </div>
+            <div class="upload-progress-bar" id="upload-progress-bar" style="display:none">
+              <div class="upload-progress-fill" id="upload-progress-fill"></div>
+            </div>
+          </div>
+
+          <!-- File Grid Container -->
+          <div class="files-grid-header" style="display:flex;justify-content:space-between;align-items:center;margin:1.5rem 0 0.75rem 0">
+            <h3 style="font-size:1.05rem;font-weight:600">Uploaded Artifacts (<span id="files-count">0</span>)</h3>
+            <div class="file-view-toggle">
+              <button class="btn-xs btn-ghost active" id="btn-files-view-grid">Grid</button>
+              <button class="btn-xs btn-ghost" id="btn-files-view-list">List</button>
+            </div>
+          </div>
+
+          <div class="files-grid" id="files-container">
+            <div class="empty-state">
+              <div class="empty-icon">📁</div>
+              <h3>No files uploaded yet</h3>
+              <p>Drag & drop files above to attach them to your workspace.</p>
             </div>
           </div>
         </section>
@@ -537,7 +690,87 @@
       </form>
     </div>
   </div>
+  <!-- ═══ GLOBAL SEARCH COMMAND PALETTE MODAL (Phase 10) ═══ -->
+  <div class="modal-overlay" id="search-modal-overlay">
+    <div class="modal modal-lg cmd-palette" id="search-modal" role="dialog" aria-modal="true">
+      <div class="cmd-palette-header">
+        <span class="search-icon" style="font-size:1.25rem;color:var(--accent-purple)">⌕</span>
+        <input type="text" id="cmd-search-input" class="cmd-search-input" placeholder="Type to search issues, projects, comments, or team members… (Esc to close)" autocomplete="off" />
+        <button class="btn-icon" id="btn-close-search-modal">✕</button>
+      </div>
+      
+      <!-- Filters & Saved Search Presets Bar -->
+      <div class="cmd-palette-toolbar">
+        <div class="cmd-filters">
+          <select id="cmd-filter-priority" class="select-input select-xs">
+            <option value="">All Priorities</option>
+            <option value="URGENT">Urgent</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+          <select id="cmd-filter-status" class="select-input select-xs">
+            <option value="">All Statuses</option>
+            <option value="TODO">To Do</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="IN_REVIEW">In Review</option>
+            <option value="DONE">Done</option>
+          </select>
+        </div>
+        <div class="cmd-saved-presets">
+          <span style="font-size:0.75rem;color:var(--text-muted)">Presets:</span>
+          <div id="saved-searches-list" class="saved-searches-list"></div>
+          <button type="button" class="btn-xs btn-ghost" id="btn-save-current-search" title="Save current query as a preset">+ Save Search</button>
+        </div>
+      </div>
+
+      <div class="cmd-palette-results" id="cmd-search-results">
+        <div class="empty-state" style="padding:2rem 1rem">
+          <div class="empty-icon">⌕</div>
+          <p style="font-size:0.85rem">Start typing above to search across your enterprise workspace.</p>
+        </div>
+      </div>
+      
+      <div class="cmd-palette-footer">
+        <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+        <span><kbd>↵</kbd> Select</span>
+        <span><kbd>ESC</kbd> Close</span>
+        <span id="cmd-exec-time" style="margin-left:auto;color:var(--text-muted)"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ FILE VERSION HISTORY MODAL (Phase 11) ═══ -->
+  <div class="modal-overlay" id="version-modal-overlay">
+    <div class="modal modal-md" id="version-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2>📄 File Version History</h2>
+        <button class="btn-icon" id="btn-close-version-modal">✕</button>
+      </div>
+      <div style="padding:1rem 0">
+        <h4 id="version-modal-filename" style="font-size:0.95rem;font-weight:600;margin-bottom:0.25rem">Filename</h4>
+        <span id="version-modal-current-v" style="font-size:0.78rem;color:var(--text-muted)">Current Version: v1</span>
+
+        <!-- Upload New Version Bar -->
+        <div style="margin:1rem 0;padding:0.75rem;background:var(--bg-elevated);border-radius:8px;border:1px dashed var(--border-subtle)">
+          <span style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.4rem">+ Upload New Version</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <input type="file" id="version-file-input" style="font-size:0.78rem" />
+            <input type="text" id="version-changelog-input" class="input input-xs" placeholder="Changelog notes (optional)…" style="flex:1" />
+            <button type="button" class="btn btn-xs btn-primary" id="btn-submit-new-version">Upload</button>
+          </div>
+        </div>
+
+        <h4 class="section-label" style="margin-bottom:0.5rem">Revision Timeline</h4>
+        <div id="version-history-timeline" class="version-timeline">
+          <div class="skeleton-loader" style="height:60px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>
 </html>
+
+

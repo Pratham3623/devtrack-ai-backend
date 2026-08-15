@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import ai, auth, boards, comments, dependencies, health, issues, labels, organizations, projects, websockets
+from app.api.v1.endpoints import ai, auth, boards, comments, dependencies, files, health, issues, labels, organizations, projects, search, websockets
 
 api_router = APIRouter()
 
@@ -32,6 +32,15 @@ api_router.include_router(websockets.router, prefix="/organizations", tags=["Rea
 
 # AI Integration Engine: mounted under /organizations/{org_id}/projects/{project_id}/ai
 api_router.include_router(ai.router, prefix="/organizations", tags=["AI Integration Engine"])
+
+# Global Enterprise Search & Saved Searches: mounted under /organizations/{org_id}/search
+api_router.include_router(search.router, prefix="/organizations", tags=["Enterprise Search & Saved Searches"])
+
+# Files & Storage: org-scoped under /organizations/{org_id}/files, local serve at /files/serve/{token}
+api_router.include_router(files.router, prefix="/organizations", tags=["Files & Storage Engine"])
+api_router.include_router(files.serve_router, prefix="/files", tags=["Files & Storage Engine"])
+
+
 
 
 

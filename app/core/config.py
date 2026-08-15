@@ -1,6 +1,7 @@
 import json
+import os
 from typing import Any, List, Union
-from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, field_validator
+from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +32,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
 
+    # Database Configuration
+    USE_SQLITE: bool = False
+    SQLITE_PATH: str = "devtrack_dev.db"
+    DATABASE_URL: str = ""
+
     # PostgreSQL Configuration
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
@@ -42,6 +48,11 @@ class Settings(BaseSettings):
 
     @property
     def ASYNC_DATABASE_URI(self) -> str:
+        if self.USE_SQLITE:
+            abs_path = os.path.abspath(self.SQLITE_PATH)
+            return f"sqlite+aiosqlite:///{abs_path}"
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
@@ -49,6 +60,11 @@ class Settings(BaseSettings):
 
     @property
     def SYNC_DATABASE_URI(self) -> str:
+        if self.USE_SQLITE:
+            abs_path = os.path.abspath(self.SQLITE_PATH)
+            return f"sqlite:///{abs_path}"
+        if self.DATABASE_URL:
+            return self.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
@@ -65,6 +81,35 @@ class Settings(BaseSettings):
         if self.REDIS_PASSWORD:
             return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+    # File Storage Configuration
+    USE_S3: bool = False
+    S3_BUCKET: str = "devtrack-files"
+    S3_REGION: str = "us-east-1"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    S3_SIGNED_URL_EXPIRY: int = 3600  # seconds
+    LOCAL_UPLOAD_DIR: str = "uploads"
+    MAX_FILE_SIZE_MB: int = 50
+    FILE_SIGNED_URL_SECRET: str = "devtrack-file-signing-secret-change-in-production"
+
+    # Allowed MIME types for upload
+    ALLOWED_MIME_TYPES: list = [
+        # Images
+        "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+        # Documents
+        "application/pdf", "text/plain", "text/markdown",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # Archives
+        "application/zip", "application/x-tar", "application/gzip",
+        # Code / Text
+        "application/json", "application/xml", "text/csv",
+        # Video
+        "video/mp4", "video/webm",
+    ]
 
     # OpenAI & AI Configuration
     OPENAI_API_KEY: str = ""

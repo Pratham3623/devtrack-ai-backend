@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import DateTime, MetaData
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from app.db.types import UUID
 
 # Custom Naming Convention for Constraints to support clean Alembic migrations
 POSTGRES_NAMING_CONVENTION = {

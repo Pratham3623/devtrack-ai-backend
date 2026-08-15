@@ -13,7 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from app.db.types import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BaseModel
@@ -29,7 +29,7 @@ class Issue(BaseModel):
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
     issue_number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -49,13 +49,13 @@ class Issue(BaseModel):
     )
 
     reporter_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+        UUID(), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     assignee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("issues.id", ondelete="CASCADE"), nullable=True, index=True
+        UUID(), ForeignKey("issues.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

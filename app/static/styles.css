@@ -1667,3 +1667,625 @@ form { padding: 1.25rem 1.5rem 1.5rem; display: flex; flex-direction: column; ga
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+
+/* ─── Executive Analytics Dashboard Styles (Phase 9) ───── */
+.exec-kpi-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.exec-kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition-fast);
+}
+
+.exec-kpi-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+}
+
+.health-kpi-card {
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+  border-left: 4px solid var(--accent-purple);
+}
+
+.health-gauge-container {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  flex-shrink: 0;
+}
+
+.health-gauge-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.gauge-bg {
+  fill: none;
+  stroke: var(--bg-elevated);
+  stroke-width: 10;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke: var(--accent-purple);
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gauge-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.gauge-value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.gauge-title {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--accent-purple);
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.health-meta h4 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.health-meta p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+
+.kpi-icon {
+  font-size: 1.75rem;
+}
+
+.kpi-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-num {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.kpi-lbl {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.card-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.chart-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-ideal { background: var(--text-muted); }
+.dot-actual { background: var(--accent-purple); }
+.dot-committed { background: var(--accent-blue); }
+.dot-completed { background: var(--accent-green); }
+
+.svg-chart-box {
+  width: 100%;
+  height: 220px;
+  position: relative;
+}
+
+.burndown-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.path-ideal {
+  stroke: var(--border-hover);
+  stroke-dasharray: 6 4;
+  stroke-width: 2;
+  fill: none;
+}
+
+.path-actual {
+  stroke: var(--accent-purple);
+  stroke-width: 3;
+  fill: none;
+  transition: stroke-dasharray 1s ease;
+}
+
+.productivity-table-wrapper {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.data-table th {
+  padding: 0.6rem 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.data-table td {
+  padding: 0.65rem 0.8rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.eff-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: hsla(152, 76%, 55%, 0.15);
+  color: var(--accent-green);
+}
+
+.activity-graph-container {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 160px;
+  padding-top: 1rem;
+  gap: 0.5rem;
+}
+
+.act-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.act-bar {
+  width: 100%;
+  max-width: 24px;
+  background: linear-gradient(180deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 4px;
+}
+
+.act-lbl {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.stats-breakdown-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.stat-row-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-row-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.stat-row-bar-bg {
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stat-row-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+@media (max-width: 1024px) {
+  .exec-kpi-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ─── Global Search Command Palette & Saved Searches (Phase 10) ─── */
+.global-search-trigger {
+  margin-left: 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  gap: 0.4rem;
+}
+
+.global-search-trigger:hover {
+  border-color: var(--accent-purple);
+  color: var(--text-primary);
+}
+
+.cmd-k {
+  font-family: inherit;
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hover);
+  color: var(--text-muted);
+}
+
+.cmd-palette {
+  max-width: 720px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.cmd-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cmd-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.cmd-palette-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 1rem;
+}
+
+.cmd-filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.select-xs {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  height: 26px;
+}
+
+.cmd-saved-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+}
+
+.saved-searches-list {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.saved-search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: hsla(261, 80%, 68%, 0.15);
+  color: var(--accent-purple);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid hsla(261, 80%, 68%, 0.3);
+  transition: var(--transition-fast);
+}
+
+.saved-search-chip:hover {
+  background: hsla(261, 80%, 68%, 0.3);
+}
+
+.saved-search-chip .btn-del-preset {
+  opacity: 0.6;
+  cursor: pointer;
+  margin-left: 2px;
+}
+
+.saved-search-chip .btn-del-preset:hover { opacity: 1; color: var(--accent-red); }
+
+.cmd-palette-results {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+
+.cmd-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.cmd-result-item:last-child { border-bottom: none; }
+
+.cmd-result-item:hover, .cmd-result-item.selected {
+  background: var(--bg-elevated);
+}
+
+.cmd-result-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cmd-result-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.cmd-result-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cmd-result-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.badge-entity-issue { background: hsla(214, 90%, 64%, 0.15); color: var(--accent-blue); }
+.badge-entity-project { background: hsla(261, 80%, 68%, 0.15); color: var(--accent-purple); }
+.badge-entity-comment { background: hsla(152, 76%, 55%, 0.15); color: var(--accent-green); }
+.badge-entity-member { background: hsla(38, 95%, 60%, 0.15); color: var(--accent-amber); }
+
+.cmd-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.cmd-palette-footer kbd {
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: inherit;
+/* ─── Files & Storage (Phase 11) ───────────────────────────────── */
+.file-drop-zone {
+  margin-top: 1rem;
+  border: 2px dashed var(--border-hover);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  background: var(--bg-surface);
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.file-drop-zone.dragover {
+  border-color: var(--accent-purple);
+  background: hsla(261, 80%, 68%, 0.06);
+  transform: scale(1.005);
+}
+
+.drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.upload-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--bg-elevated);
+}
+
+.upload-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+  transition: width 0.3s ease;
+}
+
+.files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.files-grid.list-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.file-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition-fast);
+  position: relative;
+}
+
+.file-card:hover {
+  border-color: var(--accent-purple);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+}
+
+.files-grid.list-mode .file-card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+}
+
+.file-card-preview {
+  height: 120px;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.files-grid.list-mode .file-card-preview {
+  height: 40px;
+  width: 40px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.file-card-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-card-body {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.file-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.file-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.version-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.version-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: hsla(261, 80%, 68%, 0.15);
+  color: var(--accent-purple);
+}
+
+
+
