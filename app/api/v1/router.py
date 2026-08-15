@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, boards, comments, dependencies, health, issues, labels, organizations, projects
+from app.api.v1.endpoints import auth, boards, comments, dependencies, health, issues, labels, organizations, projects, websockets
 
 api_router = APIRouter()
 
@@ -26,6 +26,9 @@ api_router.include_router(labels.router, prefix="/organizations", tags=["Issue L
 
 # Dependencies & Subtasks: mounted under /organizations/{org_id}/projects/{project_id}/issues/{issue_id}
 api_router.include_router(dependencies.router, prefix="/organizations", tags=["Subtasks & Dependencies Engine"])
+
+# WebSockets: mounted under /organizations/{org_id}/projects/{project_id}/ws
+api_router.include_router(websockets.router, prefix="/organizations", tags=["Real-Time Collaboration Engine"])
 
 
 

@@ -281,4 +281,29 @@ class BoardService:
             f"Issue {issue_id} moved from '{old_status.value}' to "
             f"'{col.mapped_status.value}' via board {board_id} by user {actor.id}"
         )
+
+        # Broadcast live board update over WebSockets
+        try:
+            from datetime import datetime, timezone
+            from app.core.websockets.events import WSEvent, WSEventType
+            from app.core.websockets.manager import manager
+
+            event = WSEvent(
+                event_type=WSEventType.ISSUE_MOVED,
+                project_id=str(project_id),
+                issue_id=str(issue.id),
+                sender_id=str(actor.id),
+                sender_name=actor.full_name or actor.email,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                payload={
+                    "issue_id": str(issue.id),
+                    "old_status": old_status.value,
+                    "new_status": col.mapped_status.value,
+                    "column_id": str(col.id),
+                },
+            )
+            await manager.broadcast_event(str(project_id), event)
+        except Exception as e:
+            logger.warning(f"Failed to broadcast issue move event: {e}")
+
         return issue

@@ -87,6 +87,33 @@ class CommentService:
         self.db.add(audit)
         await self.db.commit()
         logger.info(f"Comment {comment.id} added on Issue {issue.id} by User {actor.id}")
+
+        # Broadcast live comment event over WebSockets
+        try:
+            from datetime import datetime, timezone
+            from app.core.websockets.events import WSEvent, WSEventType
+            from app.core.websockets.manager import manager
+
+            event = WSEvent(
+                event_type=WSEventType.COMMENT_CREATED,
+                project_id=str(project_id),
+                issue_id=str(issue.id),
+                sender_id=str(actor.id),
+                sender_name=actor.full_name or actor.email,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                payload={
+                    "comment_id": str(comment.id),
+                    "issue_id": str(issue.id),
+                    "content": comment.content,
+                    "author_name": actor.full_name or actor.email,
+                    "author_id": str(actor.id),
+                    "created_at": comment.created_at.isoformat(),
+                },
+            )
+            await manager.broadcast_event(str(project_id), event)
+        except Exception as e:
+            logger.warning(f"Failed to broadcast comment event: {e}")
+
         return comment
 
     async def list_comments(

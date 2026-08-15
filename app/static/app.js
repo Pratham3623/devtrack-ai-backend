@@ -734,6 +734,9 @@ async function loadBoardView(projectId = null) {
   qs('#btn-add-column').disabled = false;
 
   loadBoardMembers(state.boardProjectId);
+  if (typeof wsClient !== 'undefined') {
+    wsClient.connect(state.boardProjectId);
+  }
 
   try {
     const boards = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/boards`);
@@ -1650,6 +1653,181 @@ function wireEvents() {
       closeColumnModal();
     }
   });
+
+  // Real-time Comment Typing Listener
+  const commentInput = qs('#comment-text-input');
+  if (commentInput) {
+    let typeTimer = null;
+    commentInput.addEventListener('input', () => {
+      if (state.editingIssue) {
+        wsClient.send('TYPING_START', { issue_id: state.editingIssue.id });
+        if (typeTimer) clearTimeout(typeTimer);
+        typeTimer = setTimeout(() => {
+          wsClient.send('TYPING_STOP', { issue_id: state.editingIssue.id });
+        }, 2000);
+      }
+    });
+  }
+}
+
+/* ── Real-Time WebSockets Engine (Phase 7) ───────────────── */
+class DevTrackWS {
+  constructor() {
+    this.ws = null;
+    this.projectId = null;
+    this.reconnectTimer = null;
+    this.pingInterval = null;
+  }
+
+  connect(projectId) {
+    if (!state.token || !state.orgId || !projectId) return;
+    if (this.ws && this.projectId === projectId && this.ws.readyState === WebSocket.OPEN) return;
+
+    this.disconnect();
+    this.projectId = projectId;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const url = `${protocol}//${host}/api/v1/organizations/${state.orgId}/projects/${projectId}/ws?token=${encodeURIComponent(state.token)}`;
+
+    try {
+      this.ws = new WebSocket(url);
+
+      this.ws.onopen = () => {
+        console.log('[DevTrack WS] Connected to project room:', projectId);
+        this.startHeartbeat();
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          this.handleEvent(msg);
+        } catch (e) {
+          console.error('[DevTrack WS] Frame parse error:', e);
+        }
+      };
+
+      this.ws.onclose = () => {
+        console.log('[DevTrack WS] Disconnected');
+        this.stopHeartbeat();
+        this.scheduleReconnect();
+      };
+
+      this.ws.onerror = (err) => {
+        console.warn('[DevTrack WS] Error:', err);
+      };
+    } catch (err) {
+      console.error('[DevTrack WS] Connection error:', err);
+    }
+  }
+
+  disconnect() {
+    this.stopHeartbeat();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ event_type: 'ping' }));
+      }
+    }, 25000);
+  }
+
+  stopHeartbeat() {
+    if (this.pingInterval) clearInterval(this.pingInterval);
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      if (this.projectId) this.connect(this.projectId);
+    }, 5000);
+  }
+
+  send(eventType, payload = {}) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ event_type: eventType, ...payload }));
+    }
+  }
+
+  handleEvent(msg) {
+    const { event_type, sender_id, sender_name, payload } = msg;
+    const isSelf = state.user && String(sender_id) === String(state.user.id);
+
+    switch (event_type) {
+      case 'PRESENCE_UPDATE':
+        renderPresenceAvatars(payload.users || []);
+        break;
+
+      case 'TYPING_START':
+        if (!isSelf && state.editingIssue && String(msg.issue_id) === String(state.editingIssue.id)) {
+          showTypingIndicator(`${sender_name || 'Someone'} is typing...`);
+        }
+        break;
+
+      case 'TYPING_STOP':
+        if (!isSelf && state.editingIssue && String(msg.issue_id) === String(state.editingIssue.id)) {
+          hideTypingIndicator();
+        }
+        break;
+
+      case 'ISSUE_MOVED':
+      case 'BOARD_UPDATE':
+        if (!isSelf && state.activeBoard) {
+          toast(`Board updated by ${sender_name || 'teammate'}`, 'info');
+          fetchBoardIssues();
+        }
+        break;
+
+      case 'COMMENT_CREATED':
+        if (!isSelf && state.editingIssue && String(msg.issue_id) === String(state.editingIssue.id)) {
+          toast(`New comment from ${sender_name || 'a teammate'}`, 'info');
+          loadCommentsAndActivity(state.editingIssue.id);
+        }
+        break;
+
+      case 'NOTIFICATION':
+        toast(payload.message || 'New notification', 'info');
+        break;
+    }
+  }
+}
+
+const wsClient = new DevTrackWS();
+
+function renderPresenceAvatars(users) {
+  const container = qs('#presence-avatars');
+  if (!container) return;
+  if (!users || users.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = users.map(u => {
+    const initials = (u.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    return `<div class="presence-avatar" title="${escHtml(u.name)}">${initials}</div>`;
+  }).join('');
+}
+
+let typingTimer = null;
+function showTypingIndicator(msg) {
+  const el = qs('#typing-indicator');
+  if (!el) return;
+  el.style.display = 'flex';
+  el.innerHTML = `<span>${escHtml(msg)}</span><span class="typing-dots"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></span>`;
+  if (typingTimer) clearTimeout(typingTimer);
+  typingTimer = setTimeout(hideTypingIndicator, 4000);
+}
+
+function hideTypingIndicator() {
+  const el = qs('#typing-indicator');
+  if (el) el.style.display = 'none';
 }
 
 /* ── Init ───────────────────────────────────────────────── */
