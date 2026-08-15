@@ -727,11 +727,15 @@ async function loadBoardView(projectId = null) {
     }
     qs('#btn-create-issue').disabled = true;
     qs('#btn-add-column').disabled = true;
+    if (qs('#btn-ai-generate-issues')) qs('#btn-ai-generate-issues').disabled = true;
+    if (qs('#btn-ai-sprint-planner')) qs('#btn-ai-sprint-planner').disabled = true;
     return;
   }
 
   qs('#btn-create-issue').disabled = false;
   qs('#btn-add-column').disabled = false;
+  if (qs('#btn-ai-generate-issues')) qs('#btn-ai-generate-issues').disabled = false;
+  if (qs('#btn-ai-sprint-planner')) qs('#btn-ai-sprint-planner').disabled = false;
 
   loadBoardMembers(state.boardProjectId);
   if (typeof wsClient !== 'undefined') {
@@ -1644,6 +1648,35 @@ function wireEvents() {
     await fetchBoardIssues();
   });
 
+  // AI Modal events
+  const btnAIGen = qs('#btn-ai-generate-issues');
+  if (btnAIGen) btnAIGen.addEventListener('click', openAIModal);
+
+  const btnAISprint = qs('#btn-ai-sprint-planner');
+  if (btnAISprint) {
+    btnAISprint.addEventListener('click', async () => {
+      if (!state.boardProjectId) return;
+      try {
+        toast('AI Sprint Planner analyzing backlog...', 'info');
+        const plan = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/ai/sprint-plan`, {
+          method: 'POST',
+          body: JSON.stringify({ sprint_name: 'Sprint 1', sprint_goal: 'Deliver Core Features', capacity_issues: 5 }),
+        });
+        alert(`🤖 AI Sprint Plan Strategy:\n\nGoal: ${plan.sprint_goal}\nAllocated: ${plan.capacity_used} issues\n\nRationale:\n${plan.rationale}\n\nRisk Assessment:\n${plan.risk_assessment}`);
+      } catch (err) {
+        toast(`Sprint planning failed: ${err.message}`, 'error');
+      }
+    });
+  }
+
+  qs('#btn-close-ai-modal').addEventListener('click', closeAIModal);
+  qs('#btn-cancel-ai-modal').addEventListener('click', closeAIModal);
+  qs('#ai-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === qs('#ai-modal-overlay')) closeAIModal();
+  });
+  qs('#ai-form').addEventListener('submit', handleAIGenerateSubmit);
+  qs('#btn-apply-ai-issues').addEventListener('click', applyAIGeneratedIssues);
+
   // Keyboard: Escape to close
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -1651,6 +1684,7 @@ function wireEvents() {
       closeCreateModal();
       closeIssueModal();
       closeColumnModal();
+      closeAIModal();
     }
   });
 

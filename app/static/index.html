@@ -167,6 +167,8 @@
                 <option value="">Default Board</option>
               </select>
               <button class="btn btn-sm btn-ghost" id="btn-add-column" disabled>+ Column</button>
+              <button class="btn btn-sm btn-ai" id="btn-ai-generate-issues" disabled title="Generate issues with AI">✨ AI Generator</button>
+              <button class="btn btn-sm btn-ai" id="btn-ai-sprint-planner" disabled title="Plan sprint with AI">🤖 AI Sprint Plan</button>
               <button class="btn btn-primary" id="btn-create-issue" disabled>+ New Issue</button>
             </div>
           </div>
@@ -468,6 +470,7 @@
 
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-cancel-issue-modal">Cancel</button>
+          <button type="button" class="btn btn-ai" id="btn-ai-bug-analysis" style="display:none">🐞 AI Bug Fix Analysis</button>
           <button type="button" class="btn btn-danger" id="btn-archive-issue" style="display:none">Archive</button>
           <button type="submit" class="btn btn-primary" id="btn-submit-issue">Save Issue</button>
         </div>
@@ -501,6 +504,35 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-cancel-column-modal">Cancel</button>
           <button type="submit" class="btn btn-primary" id="btn-submit-column">Add Column</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══ AI TASK GENERATOR MODAL ═══ -->
+  <div class="modal-overlay" id="ai-modal-overlay">
+    <div class="modal modal-lg" id="ai-modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2>✨ AI Task & Feature Generator</h2>
+        <button class="btn-icon" id="btn-close-ai-modal">✕</button>
+      </div>
+      <form id="ai-form">
+        <div class="form-group">
+          <label for="ai-prompt-input">Feature Goal or Epic Description <span class="required">*</span></label>
+          <textarea id="ai-prompt-input" class="input textarea" rows="3" placeholder="e.g. Build OAuth2 single sign-on with JWT session handling and rate limiting..." required></textarea>
+        </div>
+        <div class="form-group" style="max-width:200px">
+          <label for="ai-task-count">Number of Tasks</label>
+          <input type="number" id="ai-task-count" class="input" value="3" min="1" max="10" />
+        </div>
+        <div id="ai-results-container" style="margin-top:1rem;display:none">
+          <h4 class="section-label" style="margin-bottom:0.5rem">Generated Tasks Preview</h4>
+          <div id="ai-results-list" class="ai-results-list" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+        </div>
+        <div class="modal-actions" style="margin-top:1.25rem">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-ai-modal">Cancel</button>
+          <button type="submit" class="btn btn-ai" id="btn-submit-ai-generate">✨ Generate Tasks</button>
+          <button type="button" class="btn btn-primary" id="btn-apply-ai-issues" style="display:none">Add to Board</button>
         </div>
       </form>
     </div>

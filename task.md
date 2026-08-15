@@ -38,3 +38,10 @@
   - [x] Integrate real-time event broadcasting in `board_service`, `comment_service`, and `issue_service`
   - [x] Add presence indicators, typing indicators, live notifications, and real-time board/comment updates in UI
   - [x] Create `tests/test_websockets_api.py` & verify test suite passes (79/79 passed)
+- [x] **Phase 8: AI Integration**
+  - [x] Add OpenAI configuration settings in `config.py`
+  - [x] Create Pydantic schemas in `app/domain/schemas/ai.py`
+  - [x] Implement reusable `AIService` in `app/services/ai_service.py` with mock fallback & streaming
+  - [x] Create REST & SSE endpoints in `app/api/v1/endpoints/ai.py` & register in router
+  - [x] Update frontend UI with AI Issue Generator, Sprint Planner, Docs Generator, Bug Analyzer & Project Summary
+  - [x] Create `tests/test_ai_service.py` and `tests/test_ai_api.py` & verify test suite passes (90/90 passed)
