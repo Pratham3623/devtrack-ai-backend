@@ -98,11 +98,27 @@ alembic revision --autogenerate -m "create_initial_tables"
 
 Apply migrations to database:
 ```bash
-alembic upgrade head
+---
+
+## 🧪 Development & Demo Data
+
+To populate your local development PostgreSQL database with realistic demo data (Organization, Users, Projects, Kanban Board, 25+ Issues, Subtasks, Dependencies, Comments, Labels, and Saved Searches):
+
+```bash
+# Via Python Virtual Environment
+python -m app.scripts.seed_demo
+
+# Or via Docker Container
+docker compose exec api python -m app.scripts.seed_demo
 ```
 
-Rollback last migration:
-```bash
-alembic downgrade -1
-```
-# devtrack-ai-backend
+### 🔑 Demo Login Credentials
+
+| Role | Email | Password |
+|---|---|---|
+| **Admin / Owner** | `demo@devtrack.ai` | `DemoPass123!` |
+| **Project Manager** | `pm@devtrack.ai` | `DemoPass123!` |
+| **Developer** | `dev@devtrack.ai` | `DemoPass123!` |
+
+> **Note:** Demo data seeding is idempotent and safe for local development use only. It will never run in production environments.
+

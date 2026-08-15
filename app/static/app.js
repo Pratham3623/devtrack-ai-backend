@@ -8,10 +8,16 @@ const API = '/api/v1';
 const PAGE_SIZE = 12;
 
 /* ── State ─────────────────────────────────────────────── */
+function getStoredOrgId() {
+  const val = localStorage.getItem('dt_org_id');
+  if (!val || val === 'null' || val === 'undefined' || val.trim() === '') return null;
+  return val;
+}
+
 const state = {
   token: localStorage.getItem('dt_token'),
   user: JSON.parse(localStorage.getItem('dt_user') || 'null'),
-  orgId: localStorage.getItem('dt_org_id') || null,
+  orgId: getStoredOrgId(),
   currentProject: null,
   projects: [],
   templates: [],
@@ -92,20 +98,33 @@ const TEMPLATE_COLORS = {
 
 /* ── Auth & Bootstrap ───────────────────────────────────── */
 async function bootstrap() {
-  if (!state.token) {
-    await quickLogin();
-  }
+  console.log('[DT] bootstrap() start — token:', state.token ? 'PRESENT' : 'MISSING', '| orgId:', state.orgId);
+  // Always re-authenticate to guarantee a fresh valid token.
+  // Stale localStorage tokens cause silent failures when the browser
+  // holds an expired JWT from a previous session.
+  await quickLogin();
+  console.log('[DT] quickLogin() done — token:', state.token ? 'PRESENT' : 'MISSING');
   renderUserSidebar();
   await loadOrganizations();
+  console.log('[DT] after loadOrganizations — orgId:', state.orgId);
   await loadTemplates();
   if (state.orgId) {
     await fetchProjects();
+    console.log('[DT] after fetchProjects — projects count:', state.projects.length, '| boardProjectId:', state.boardProjectId);
+    if (state.boardProjectId) {
+      await loadBoardView(state.boardProjectId);
+    } else {
+      console.warn('[DT] boardProjectId still null after fetchProjects — board NOT loaded');
+    }
+  } else {
+    console.error('[DT] orgId is null after loadOrganizations — nothing loaded');
   }
+  console.log('[DT] bootstrap() complete');
 }
 
 async function quickLogin() {
-  /* In a full app, this redirects to a login page.
-     For demo purposes we try to register+login a demo user. */
+  /* Always re-login on page load to ensure a fresh, valid token.
+     This prevents stale localStorage JWTs from silently breaking the app. */
   const email = 'demo@devtrack.ai';
   const password = 'DemoPass123!';
   try {
@@ -114,24 +133,29 @@ async function quickLogin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, full_name: 'Demo User' }),
     });
-  } catch (_) { /* ignore if exists */ }
+  } catch (_) { /* ignore network errors on register attempt */ }
 
-  const loginRes = await fetch(`${API}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
+  try {
+    const loginRes = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
 
-  if (!loginRes.ok) {
-    toast('Please log in via /docs first.', 'error');
-    return;
+    if (!loginRes.ok) {
+      toast('Login failed. Please check backend is running.', 'error');
+      return;
+    }
+    const data = await loginRes.json();
+    state.token = data.access_token;
+    state.user = data.user;
+    localStorage.setItem('dt_token', state.token);
+    localStorage.setItem('dt_user', JSON.stringify(state.user));
+  } catch (e) {
+    toast('Cannot reach server. Is Docker running?', 'error');
   }
-  const data = await loginRes.json();
-  state.token = data.access_token;
-  state.user = data.user;
-  localStorage.setItem('dt_token', state.token);
-  localStorage.setItem('dt_user', JSON.stringify(state.user));
 }
+
 
 function renderUserSidebar() {
   if (!state.user) return;
@@ -142,7 +166,9 @@ function renderUserSidebar() {
 
 async function loadOrganizations() {
   try {
+    console.log('[DT] loadOrganizations() — calling GET /organizations');
     const orgs = await apiFetch('/organizations');
+    console.log('[DT] /organizations response:', JSON.stringify(orgs));
     const sel = qs('#org-select');
     if (sel) sel.innerHTML = '<option value="">Select Organization…</option>';
     if (orgs && orgs.length) {
@@ -155,15 +181,17 @@ async function loadOrganizations() {
       });
       if (!state.orgId || !orgs.some(o => o.id === state.orgId)) {
         state.orgId = orgs[0].id;
-        if (sel) sel.value = state.orgId;
         localStorage.setItem('dt_org_id', state.orgId);
       }
+      if (sel) sel.value = state.orgId;
       if (qs('#btn-new-project')) qs('#btn-new-project').disabled = false;
+      console.log('[DT] org selected:', state.orgId, '|', orgs.find(o => o.id === state.orgId)?.name);
     } else {
+      console.warn('[DT] No orgs returned — creating default org');
       await createDefaultOrg();
     }
   } catch (e) {
-    console.warn('loadOrganizations:', e.message);
+    console.error('[DT] loadOrganizations FAILED:', e.message);
   }
 }
 
@@ -183,7 +211,7 @@ async function createDefaultOrg() {
 
 /* ── Projects ───────────────────────────────────────────── */
 async function fetchProjects(archived = false) {
-  if (!state.orgId) return;
+  if (!state.orgId) { console.warn('[DT] fetchProjects: orgId is null, skipping'); return; }
   const params = new URLSearchParams({
     page: state.page,
     size: PAGE_SIZE,
@@ -192,16 +220,32 @@ async function fetchProjects(archived = false) {
   if (state.query) params.set('q', state.query);
   if (state.filterType) params.set('template_type', state.filterType);
 
+  console.log('[DT] fetchProjects() — GET /organizations/' + state.orgId + '/projects?' + params);
   try {
     const data = await apiFetch(`/organizations/${state.orgId}/projects?${params}`);
-    state.projects = data.items;
-    state.total = data.total;
-    state.pages = data.pages;
+    console.log('[DT] /projects response: total=' + data.total + ', items=' + (data.items || []).length);
+    state.projects = data.items || [];
+    state.total = data.total || 0;
+    state.pages = data.pages || 0;
+
+    if (state.projects.length) {
+      if (!state.boardProjectId || !state.projects.some(p => p.id === state.boardProjectId)) {
+        const deProj = state.projects.find(p => p.key === 'DE');
+        state.boardProjectId = deProj ? deProj.id : state.projects[0].id;
+        console.log('[DT] auto-selected boardProjectId:', state.boardProjectId);
+      }
+    } else {
+      console.warn('[DT] fetchProjects: returned 0 projects!');
+    }
+
+    console.log('[DT] calling renderProjectGrid — grid el:', !!qs('#project-grid'));
     renderProjectGrid(archived);
     renderStats();
     renderPagination(archived);
     populateAnalyticsSelect();
+    populateBoardProjectSelect();
   } catch (e) {
+    console.error('[DT] fetchProjects FAILED:', e.message, e.stack);
     toast(`Error loading projects: ${e.message}`, 'error');
   }
 }
@@ -786,8 +830,9 @@ function populateBoardProjectSelect() {
 async function loadBoardView(projectId = null) {
   if (!state.orgId) return;
   if (!projectId) {
-    if (state.projects.length && !state.boardProjectId) {
-      state.boardProjectId = state.projects[0].id;
+    if (state.projects.length && (!state.boardProjectId || !state.projects.some(p => p.id === state.boardProjectId))) {
+      const deProj = state.projects.find(p => p.key === 'DE');
+      state.boardProjectId = deProj ? deProj.id : state.projects[0].id;
     }
   } else {
     state.boardProjectId = projectId;
@@ -807,19 +852,19 @@ async function loadBoardView(projectId = null) {
           <p>Select a project from the dropdown above to load its Kanban board.</p>
         </div>`;
     }
-    qs('#btn-create-issue').disabled = true;
-    qs('#btn-add-column').disabled = true;
+    if (qs('#btn-create-issue')) qs('#btn-create-issue').disabled = true;
+    if (qs('#btn-add-column')) qs('#btn-add-column').disabled = true;
     if (qs('#btn-ai-generate-issues')) qs('#btn-ai-generate-issues').disabled = true;
     if (qs('#btn-ai-sprint-planner')) qs('#btn-ai-sprint-planner').disabled = true;
     return;
   }
 
-  qs('#btn-create-issue').disabled = false;
-  qs('#btn-add-column').disabled = false;
+  if (qs('#btn-create-issue')) qs('#btn-create-issue').disabled = false;
+  if (qs('#btn-add-column')) qs('#btn-add-column').disabled = false;
   if (qs('#btn-ai-generate-issues')) qs('#btn-ai-generate-issues').disabled = false;
   if (qs('#btn-ai-sprint-planner')) qs('#btn-ai-sprint-planner').disabled = false;
 
-  loadBoardMembers(state.boardProjectId);
+  await loadBoardMembers(state.boardProjectId);
   if (typeof wsClient !== 'undefined') {
     wsClient.connect(state.boardProjectId);
   }
@@ -903,24 +948,32 @@ async function loadBoardDetails(boardId) {
 }
 
 async function fetchBoardIssues() {
-  if (!state.boardProjectId) return;
+  if (!state.boardProjectId) { console.warn('[DT] fetchBoardIssues: boardProjectId is null'); return; }
   const params = new URLSearchParams({ page: 1, size: 100 });
   if (state.boardQuery) params.set('q', state.boardQuery);
   if (state.boardPriorityFilter) params.set('priority', state.boardPriorityFilter);
   if (state.boardAssigneeFilter) params.set('assignee_id', state.boardAssigneeFilter);
 
+  console.log('[DT] fetchBoardIssues() — GET /projects/' + state.boardProjectId + '/issues');
   try {
     const data = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues?${params}`);
+    console.log('[DT] /issues response: total=' + data.total + ', items=' + (data.items || []).length);
     state.boardIssues = data.items || [];
+    console.log('[DT] calling renderBoardUI — activeBoard:', !!state.activeBoard, '| cols:', state.activeBoard?.columns?.length);
     renderBoardUI();
   } catch (e) {
+    console.error('[DT] fetchBoardIssues FAILED:', e.message);
     toast(`Error loading issues: ${e.message}`, 'error');
   }
 }
 
 function renderBoardUI() {
   const container = qs('#kanban-board-container');
-  if (!container || !state.activeBoard) return;
+  console.log('[DT] renderBoardUI — container:', !!container, '| activeBoard:', !!state.activeBoard, '| issues:', state.boardIssues.length);
+  if (!container || !state.activeBoard) {
+    console.warn('[DT] renderBoardUI: container=' + !!container + ' activeBoard=' + !!state.activeBoard + ' — RETURNING EARLY');
+    return;
+  }
 
   const cols = state.activeBoard.columns || [];
   if (!cols.length) {
@@ -1152,6 +1205,52 @@ async function archiveCurrentEditingIssue() {
     await fetchBoardIssues();
   } catch (err) {
     toast(`Archive failed: ${err.message}`, 'error');
+  }
+}
+
+/* ── Column Modal Module ──────────────────────────────────── */
+function openColumnModal() {
+  if (!state.activeBoard) { toast('Please select a board first.', 'error'); return; }
+  const overlay = qs('#column-modal-overlay');
+  const form = qs('#column-form');
+  if (form) form.reset();
+  if (qs('#column-status')) qs('#column-status').value = 'TODO';
+  if (overlay) overlay.classList.add('active');
+  if (qs('#column-name')) qs('#column-name').focus();
+}
+
+function closeColumnModal() {
+  const overlay = qs('#column-modal-overlay');
+  if (overlay) overlay.classList.remove('active');
+}
+
+async function handleColumnFormSubmit(e) {
+  e.preventDefault();
+  if (!state.orgId || !state.boardProjectId || !state.activeBoard) return;
+
+  const nameVal = (qs('#column-name')?.value || '').trim();
+  const statusVal = qs('#column-status')?.value || 'TODO';
+
+  if (!nameVal) { toast('Column name is required.', 'error'); return; }
+
+  const btn = qs('#btn-submit-column');
+  if (btn) btn.disabled = true;
+
+  try {
+    await apiFetch(
+      `/organizations/${state.orgId}/projects/${state.boardProjectId}/boards/${state.activeBoard.id}/columns`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: nameVal, mapped_status: statusVal }),
+      }
+    );
+    toast('Board column added.', 'success');
+    closeColumnModal();
+    await loadBoardDetails(state.activeBoard.id);
+  } catch (err) {
+    toast(`Failed to add column: ${err.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1546,28 +1645,31 @@ function switchView(name) {
   });
 
   qsa('.view').forEach(v => v.classList.remove('active'));
-  qs(`#view-${name}`).classList.add('active');
+  const target = qs(`#view-${name}`);
+  if (target) target.classList.add('active');
 
   const labels = { projects: 'Projects', board: 'Kanban Board', templates: 'Templates', analytics: 'Analytics', files: 'Files & Storage', archived: 'Archived' };
-  qs('#breadcrumb').textContent = labels[name] || name;
+  if (qs('#breadcrumb')) qs('#breadcrumb').textContent = labels[name] || name;
+
+  if (!state.orgId) return;
 
   if (name === 'archived') fetchProjects(true);
   if (name === 'analytics') {
-    if (!state.projects.length && state.orgId) fetchProjects();
+    populateAnalyticsSelect();
+    const sel = qs('#analytics-project-select');
+    if (sel && !sel.value && state.projects.length) {
+      const targetId = state.boardProjectId || state.projects[0].id;
+      sel.value = targetId;
+      loadAnalytics(targetId);
+    }
   }
   if (name === 'files') {
-    if (!state.projects.length && state.orgId) {
-      fetchProjects().then(() => loadFilesView());
-    } else {
-      loadFilesView();
-    }
+    populateFilesProjectFilter();
+    loadFilesView();
   }
   if (name === 'board') {
-    if (!state.projects.length && state.orgId) {
-      fetchProjects().then(() => loadBoardView());
-    } else {
-      loadBoardView();
-    }
+    populateBoardProjectSelect();
+    loadBoardView();
   }
 }
 
@@ -2015,8 +2117,111 @@ function showTypingIndicator(msg) {
 }
 
 function hideTypingIndicator() {
-  const el = qs('#typing-indicator');
-  if (el) el.style.display = 'none';
+}
+
+/* ── AI Task Generator Module ──────────────────────────────── */
+let generatedAITasks = [];
+
+function openAIModal() {
+  if (!state.boardProjectId) { toast('Please select a project board first.', 'error'); return; }
+  generatedAITasks = [];
+  const overlay = qs('#ai-modal-overlay');
+  const form = qs('#ai-form');
+  if (form) form.reset();
+  if (qs('#ai-task-count')) qs('#ai-task-count').value = '3';
+  if (qs('#ai-results-container')) qs('#ai-results-container').style.display = 'none';
+  if (qs('#ai-results-list')) qs('#ai-results-list').innerHTML = '';
+  if (qs('#btn-apply-ai-issues')) qs('#btn-apply-ai-issues').style.display = 'none';
+  if (overlay) overlay.classList.add('active');
+  if (qs('#ai-prompt-input')) qs('#ai-prompt-input').focus();
+}
+
+function closeAIModal() {
+  const overlay = qs('#ai-modal-overlay');
+  if (overlay) overlay.classList.remove('active');
+  generatedAITasks = [];
+}
+
+async function handleAIGenerateSubmit(e) {
+  e.preventDefault();
+  if (!state.orgId || !state.boardProjectId) return;
+
+  const promptText = (qs('#ai-prompt-input')?.value || '').trim();
+  const countVal = parseInt(qs('#ai-task-count')?.value || '3', 10);
+
+  if (!promptText) { toast('Feature prompt description is required.', 'error'); return; }
+
+  const btn = qs('#btn-submit-ai-generate');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '✨ Generating…';
+  }
+
+  try {
+    const data = await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/ai/generate-tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt: promptText, count: countVal }),
+    });
+
+    generatedAITasks = data.tasks || [];
+    const container = qs('#ai-results-container');
+    const list = qs('#ai-results-list');
+    const applyBtn = qs('#btn-apply-ai-issues');
+
+    if (list) {
+      list.innerHTML = generatedAITasks.map((t, idx) => `
+        <div class="ai-task-card" style="padding:0.75rem;background:var(--bg-tertiary);border-radius:var(--radius-sm);border:1px solid var(--border-subtle)">
+          <div style="font-weight:600;font-size:0.88rem;color:var(--text-primary)">${idx + 1}. ${escHtml(t.title)}</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.25rem">${escHtml(t.description || 'No description')}</div>
+          <div style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:center">
+            <span class="priority-pill priority-${t.priority || 'MEDIUM'}">${(t.priority || 'MEDIUM').replace('_', ' ')}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted)">Status: ${t.status || 'TODO'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    if (container) container.style.display = 'block';
+    if (applyBtn) applyBtn.style.display = 'inline-flex';
+    toast(`Generated ${generatedAITasks.length} task preview(s).`, 'success');
+  } catch (err) {
+    toast(`AI generation failed: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✨ Generate Tasks';
+    }
+  }
+}
+
+async function applyAIGeneratedIssues() {
+  if (!state.orgId || !state.boardProjectId || !generatedAITasks.length) return;
+
+  const applyBtn = qs('#btn-apply-ai-issues');
+  if (applyBtn) applyBtn.disabled = true;
+
+  try {
+    let createdCount = 0;
+    for (const t of generatedAITasks) {
+      await apiFetch(`/organizations/${state.orgId}/projects/${state.boardProjectId}/issues`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: t.title,
+          description: t.description || undefined,
+          status: t.status || 'TODO',
+          priority: t.priority || 'MEDIUM',
+        }),
+      });
+      createdCount++;
+    }
+    toast(`Added ${createdCount} issues to Kanban board!`, 'success');
+    closeAIModal();
+    await fetchBoardIssues();
+  } catch (err) {
+    toast(`Failed to add issues: ${err.message}`, 'error');
+  } finally {
+    if (applyBtn) applyBtn.disabled = false;
+  }
 }
 
 /* ── Enterprise Global Search & Saved Searches (Phase 10) ──── */
@@ -2176,16 +2381,18 @@ async function deleteSavedSearchPreset(e, savedId) {
 /* ── Files & Storage Engine (Phase 11) ─────────────────── */
 let currentFilesViewMode = 'grid';
 
-async function loadFilesView() {
-  if (!state.orgId) { toast('Select an organization first.', 'error'); return; }
-  
-  // Populate project filter dropdown
+function populateFilesProjectFilter() {
   const projSelect = qs('#files-project-filter');
   if (projSelect) {
     projSelect.innerHTML = '<option value="">All Projects</option>' + 
       (state.projects || []).map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
   }
+}
 
+async function loadFilesView() {
+  if (!state.orgId) { toast('Select an organization first.', 'error'); return; }
+  
+  populateFilesProjectFilter();
   await fetchAndRenderFiles();
 }
 
